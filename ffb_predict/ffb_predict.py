@@ -18,26 +18,26 @@ from colossus.lss import mass_function, peaks
 # cosmology
 # -----------------------------
 # params = {'flat': True, 'H0': 67.32, 'Om0': 0.3158, 'Ob0': 0.156 * 0.3158, 'sigma8': 0.812, 'ns': 0.96605}  # Planck15
-params = {'flat': True, 'H0': 70, 'Om0': 0.3, 'Ob0': 0.048, 'sigma8': 0.82, 'ns': 0.95}
-cosmo = cosmology.setCosmology('myCosmo', params)
+params = {"flat": True, "H0": 70, "Om0": 0.3, "Ob0": 0.048, "sigma8": 0.82, "ns": 0.95}
+cosmo = cosmology.setCosmology("myCosmo", params)
 fb = cosmo.Ob0 / cosmo.Om0  # 0.16
 
 # Press-Schechter parameters
 ps_ext_args = dict(
-    ps_args={'model': 'eisenstein98'},
-    sigma_args={'filt': 'tophat'},
-    deltac_args={'corrections': True}
+    ps_args={"model": "eisenstein98"},
+    sigma_args={"filt": "tophat"},
+    deltac_args={"corrections": True},
 )
 
 # global variables
 # -----------------------------
-UM_SHMR_MINSLOP = 0.3  # manual fix with minimum slop of dlnM*/dlnMh, can be None to disable
+UM_SHMR_MINSLOP = 0.3  # manual fix with minimum slop of dlnM*/dlnMh, None for disable
 FFB_SFR_SIG = 0.3  # dex
 FFB_SFR_TH_SIG = 0.15  # dex, transition width, equiv to ~0.6 dex full transition region
 FFB_LGMH_PIVOT = 10.8  # Msun
 FFB_LGMH_QUENCH = 12  # Msun, can be None to disable
 FFB_SFE_MAX = 1  # maximum star formation efficiency for FFB galaxies
-HALO_MAH_MODEL = 'Dekel13'  # Model for halo growth history, Dekel13 or Zhao09
+HALO_MAH_MODEL = "Dekel13"  # Model for halo growth history, Dekel13 or Zhao09
 DEKEL13_BETA = 0.14  # beta=0.14 in Dekel+13 eq. 7
 DEKEL13_PIVOT = 12  # pivot mass
 UV_FACTOR = 1  # not used
@@ -58,11 +58,11 @@ def sigmoid(x, m=0, s=1, a=0, b=1):
 
 
 def normal(x, m, s):
-    return exp(-0.5 * ((x - m) / s)**2) / (s * (2 * pi)**0.5)
+    return exp(-0.5 * ((x - m) / s) ** 2) / (s * (2 * pi) ** 0.5)
 
 
 def lgnormal_mean(med, sig_dex):
-    return med * exp(0.5 * (sig_dex * log(10))**2)
+    return med * exp(0.5 * (sig_dex * log(10)) ** 2)
 
 
 # Universe Machine functions
@@ -72,8 +72,8 @@ def um_vpeak_Mh_z(Mh, z):
     # B19, eq E2
     # Mh: Msun, vpeak: km/s
     a = 1.0 / (1.0 + z)
-    Mz = 1.64e12 / ((a / 0.378)**-0.142 + (a / 0.378)**-1.79)
-    vpeak = 200 * (Mh / Mz)**(1 / 3)
+    Mz = 1.64e12 / ((a / 0.378) ** -0.142 + (a / 0.378) ** -1.79)
+    vpeak = 200 * (Mh / Mz) ** (1 / 3)
     return vpeak
 
 
@@ -82,8 +82,8 @@ def um_Mh_vpeak_z(vpeak, z):
     # B19, eq E2
     # Mh: Msun, vpeak: km/s
     a = 1.0 / (1.0 + z)
-    Mz = 1.64e12 / ((a / 0.378)**-0.142 + (a / 0.378)**-1.79)
-    Mh = Mz * (vpeak / 200)**3
+    Mz = 1.64e12 / ((a / 0.378) ** -0.142 + (a / 0.378) ** -1.79)
+    Mh = Mz * (vpeak / 200) ** 3
     return Mh
 
 
@@ -100,23 +100,24 @@ def um_sfr_func2(z, x0, xa, xz):
 def um_sfr_med_sf(lgMh, z):
     # B19, appendix H
     vpeak = um_vpeak_Mh_z(10**lgMh, z)  # km/s
-    vz = 10**um_sfr_func1(z, 2.151, -1.658, 1.680, -0.233)  # km/s
-    eps = 10**um_sfr_func1(z, 0.109, -3.441, 5.079, -0.781)  # Msun/yr
+    vz = 10 ** um_sfr_func1(z, 2.151, -1.658, 1.680, -0.233)  # km/s
+    eps = 10 ** um_sfr_func1(z, 0.109, -3.441, 5.079, -0.781)  # Msun/yr
     alpha = um_sfr_func1(z, -5.598, -20.731, 13.455, -1.321)
     beta = um_sfr_func2(z, -1.911, 0.395, 0.747)
-    gamma = 10**um_sfr_func2(z, -1.699, 4.206, -0.809)
+    gamma = 10 ** um_sfr_func2(z, -1.699, 4.206, -0.809)
     delta = 0.055
 
     # B19, eq 4, 5
     v = vpeak / vz
-    SFR_SF = eps * ((v**alpha + v**beta)**(-1)
-                    + gamma * exp(-0.5 * (log10(v) / delta)**2))
+    SFR_SF = eps * (
+        (v**alpha + v**beta) ** (-1) + gamma * exp(-0.5 * (log10(v) / delta) ** 2)
+    )
     return SFR_SF
 
 
 def um_sfr_med_q(lgMh, z):
     # XXX
-    Mstar = 10**um_lgMs_med(lgMh, z)  # Msun
+    Mstar = 10 ** um_lgMs_med(lgMh, z)  # Msun
     SFR_Q = 10**-11.8 * Mstar  # Msun/yr
     return SFR_Q
 
@@ -138,7 +139,7 @@ def um_sfr_sig_q(lgMh, z):
 def um_lgMhQ(z):
     # B19, eq 12-15, appendix H
     a = 1.0 / (1.0 + z)
-    vq = 10**(2.248 - 0.018 * (1 - a) + 0.124 * z)
+    vq = 10 ** (2.248 - 0.018 * (1 - a) + 0.124 * z)
     Mh = um_Mh_vpeak_z(vq, z)
     return log10(Mh)
 
@@ -149,7 +150,7 @@ def um_fQ(lgMh, z):
 
     # B19, eq 12-15, appendix H
     qmin = np.fmax(0, -1.944 - 2.419 * (1 - a))
-    vq = 10**(2.248 - 0.018 * (1 - a) + 0.124 * z)
+    vq = 10 ** (2.248 - 0.018 * (1 - a) + 0.124 * z)
     sigvq = 0.227 + 0.037 * (1 - a) - 0.107 * log(1 + z)  # B19, eq 14
     # note the typo in appendix H
     sigvq = np.fmax(0.01, sigvq)  # ZZ: ensure sigvq>=0.01
@@ -167,13 +168,14 @@ def um_sfr(lgMh, z):
     return f_Q * SFR_Q + (1 - f_Q) * SFR_SF
 
 
-def um_lgMs_med_basic(lgMh, z, model='obs'):
+def um_lgMs_med_basic(lgMh, z, model="obs"):
     # Mh: Msun, Ms: Msun
     # B19, appendix J
     a = 1.0 / (1.0 + z)
     a1 = a - 1.0
     lna = log(a)
 
+    # fmt: off
     if model == 'obs':
         # B19, Table J1: Obs, All, All, Excl
         (EFF_0, EFF_A, EFF_A2, EFF_Z,
@@ -198,16 +200,20 @@ def um_lgMs_med_basic(lgMh, z, model='obs'):
             1.9731, -2.3534, -1.7833, 0.1860,
             0.4732, -0.8843, -0.4861, 0.4068,
             -1.0879, -3.2414, -1.0785)
+    # fmt: on
     lgm1 = M1_0 + a1 * M1_A - lna * M1_A2 + z * M1_Z
     eff = EFF_0 + a1 * EFF_A - lna * EFF_A2 + z * EFF_Z
     alpha = ALPHA_0 + a1 * ALPHA_A - lna * ALPHA_A2 + z * ALPHA_Z
     beta = BETA_0 + a1 * BETA_A + z * BETA_Z
     delta = DELTA_0
-    gamma = 10**(GAMMA_0 + a1 * GAMMA_A + z * GAMMA_Z)
+    gamma = 10 ** (GAMMA_0 + a1 * GAMMA_A + z * GAMMA_Z)
 
     x = lgMh - lgm1
-    lgMs = lgm1 + (eff - log10(10**(-alpha * x) + 10**(-beta * x))
-                   + gamma * exp(-0.5 * (x / delta)**2))
+    lgMs = lgm1 + (
+        eff
+        - log10(10 ** (-alpha * x) + 10 ** (-beta * x))
+        + gamma * exp(-0.5 * (x / delta) ** 2)
+    )
     return lgMs  # Msun
 
 
@@ -221,7 +227,9 @@ def um_lgMs_sig(lgMh, z):
     """
     # sig = sigmoid(lgMh, 12.5, s=1, a=0.3, b=0.2)  # B19, fig 12
     sig = sigmoid(lgMh, 13.9 - z * 0.3, s=0.2, a=0.4, b=0.1)  # according to Han
-    sig = sigmoid(lgMh, 13.9 - z * 0.3, s=0.2, a=0.4, b=0.3)  # added scatter due to scatter in MUV(Ms)
+    sig = sigmoid(
+        lgMh, 13.9 - z * 0.3, s=0.2, a=0.4, b=0.3
+    )  # added scatter due to scatter in MUV(Ms)
     return sig  # dex
 
 
@@ -255,11 +263,11 @@ def um_AUV(MUV, z, derivative=False):
     # B19, eq 23, 24
     M_dust = -20.594 - 0.054 * (np.fmax(4, z) - 4)
     alpha_dust = 0.559
-    z = 10**(0.4 * alpha_dust * (M_dust - MUV))
+    z = 10 ** (0.4 * alpha_dust * (M_dust - MUV))
     AUV = 2.5 * log10(1 + z)
 
     if derivative:
-        dAUV_dMUV = - alpha_dust * z / (1 + z)
+        dAUV_dMUV = -alpha_dust * z / (1 + z)
         return AUV, dAUV_dMUV
     else:
         return AUV
@@ -276,7 +284,7 @@ def ffb_lgMh_crit(z):
 
 def ffb_sfr_med(lgMh, z):
     sfr_avg = func_Mdot_baryon(lgMh, z=z) * FFB_SFE_MAX  # keep sfr_avg fixed
-    fac_avg_med = exp(0.5 * (ffb_sfr_sig(lgMh, z=z) * log(10))**2)
+    fac_avg_med = exp(0.5 * (ffb_sfr_sig(lgMh, z=z) * log(10)) ** 2)
     sfr_med = sfr_avg / fac_avg_med  # convert avg to median
     return sfr_med  # Msun/yr
 
@@ -335,10 +343,11 @@ def p_lgSFR_lgMh(lgSFR, lgMh, z):
     f_ffb = f_SF_ * f_FFB_
     f_sf = f_SF_ * (1 - f_FFB_)
 
-    prob = (f_ffb * normal(lgSFR, log10(med_ffb), sig_ffb)
-            + f_sf * normal(lgSFR, log10(med_sf), sig_sf)
-            + f_q * normal(lgSFR, log10(med_q), sig_q)
-            )
+    prob = (
+        f_ffb * normal(lgSFR, log10(med_ffb), sig_ffb)
+        + f_sf * normal(lgSFR, log10(med_sf), sig_sf)
+        + f_q * normal(lgSFR, log10(med_q), sig_q)
+    )
     return prob
 
 
@@ -356,9 +365,11 @@ def func_sfr_avg(lgMh, z):
     f_ffb = f_SF_ * f_FFB_
     f_sf = f_SF_ * (1 - f_FFB_)
 
-    sfr_avg = (f_ffb * lgnormal_mean(med_ffb, sig_ffb)
-               + f_sf * lgnormal_mean(med_sf, sig_sf)
-               + f_q * lgnormal_mean(med_q, sig_q))
+    sfr_avg = (
+        f_ffb * lgnormal_mean(med_ffb, sig_ffb)
+        + f_sf * lgnormal_mean(med_sf, sig_sf)
+        + f_q * lgnormal_mean(med_q, sig_q)
+    )
     return sfr_avg
 
 
@@ -382,18 +393,19 @@ def func_lgMs_med(lgMh, z, z_max=30, n_grid=200):
     lgzp1_hist = np.linspace(log10(z_ob + 1), log10(z_max + 1), n_grid)
     z_hist = 10**lgzp1_hist - 1
     lgM_hist = mah_interp(z_ob, lgM_ob, z_hist)
-    Mdot_hist = 10**mah_der_interp(z_ob, lgM_ob, z_hist) * fb
+    Mdot_hist = 10 ** mah_der_interp(z_ob, lgM_ob, z_hist) * fb
 
     dif_sfr = func_dif_sfr_avg(lgM_hist, z_hist, Mdot_hist)
 
-    dtdlgzp1_hist = cosmo.lookbackTime(
-        z_hist, derivative=1) * log(10) * (1 + z_hist) * 1e9  # yr/dex
+    dtdlgzp1_hist = (
+        cosmo.lookbackTime(z_hist, derivative=1) * log(10) * (1 + z_hist) * 1e9
+    )  # yr/dex
 
     func = CubicSpline(lgzp1_hist, dif_sfr * dtdlgzp1_hist, axis=1).antiderivative()
     dif_Ms = func(lgzp1_hist[-1]) - func(lgzp1_hist[0])
 
     # UM mass and FFB correction
-    Ms_um = 10**um_lgMs_med(lgMh, z)
+    Ms_um = 10 ** um_lgMs_med(lgMh, z)
     Ms = Ms_um + dif_Ms
 
     return log10(Ms)
@@ -408,8 +420,9 @@ def um_lgMs_med_integ(lgMh, z, z_max=30, n_grid=200):
     lgM_hist = mah_interp(z_ob, lgM_ob, z_hist)
     sfr = um_sfr(lgM_hist, z_hist)
 
-    dtdlgzp1_hist = cosmo.lookbackTime(
-        z_hist, derivative=1) * log(10) * (1 + z_hist) * 1e9  # yr/dex
+    dtdlgzp1_hist = (
+        cosmo.lookbackTime(z_hist, derivative=1) * log(10) * (1 + z_hist) * 1e9
+    )  # yr/dex
 
     func = CubicSpline(lgzp1_hist, sfr * dtdlgzp1_hist, axis=1).antiderivative()
     Ms = func(lgzp1_hist[-1]) - func(lgzp1_hist[0]) + 1
@@ -423,10 +436,11 @@ def func_lgMh_med_integ(lgMh, z, z_max=30, n_grid=200):
     z_hist = 10**lgzp1_hist - 1
 
     # lgM_hist = mah_interp(z_ob, lgM_ob, z_hist)
-    Mdot = 10**mah_der_interp(z_ob, lgM_ob, z_hist)
+    Mdot = 10 ** mah_der_interp(z_ob, lgM_ob, z_hist)
 
-    dtdlgzp1_hist = cosmo.lookbackTime(
-        z_hist, derivative=1) * log(10) * (1 + z_hist) * 1e9  # yr/dex
+    dtdlgzp1_hist = (
+        cosmo.lookbackTime(z_hist, derivative=1) * log(10) * (1 + z_hist) * 1e9
+    )  # yr/dex
 
     func = CubicSpline(lgzp1_hist, Mdot * dtdlgzp1_hist, axis=1).antiderivative()
     Mh = func(lgzp1_hist[-1]) - func(lgzp1_hist[0]) + 1
@@ -443,16 +457,51 @@ def p_lgMs_lgMh(lgMs, lgMh, z):
 
 def func_Mdot_baryon(lgMh, z):
     if not np.isscalar(z):
-        raise ValueError('z should be a scalar')
+        raise ValueError("z should be a scalar")
 
-    Mdot = 10**mah_der_interp(z, lgMh, z) * fb
+    Mdot = 10 ** mah_der_interp(z, lgMh, z) * fb
     return Mdot  # Msun/yr
 
 
-def func_sfr_SFE(lgMh, z):
+def func_SFE_instant(lgMh, z):
     SFR = func_sfr_avg(lgMh, z)
     Mdot_baryon = func_Mdot_baryon(lgMh, z)
     return SFR / Mdot_baryon
+
+
+def p_MUV_lgMh(MUV, lgMh, z, attenuation=False):
+    """
+    attenuation: False, 'shell', 'disc', 'average'
+    """
+    assert attenuation in [False, "shell", "disc", "average"]
+
+    lgMs_med = func_lgMs_med(lgMh, z)
+    lgMs_sig = um_lgMs_sig(lgMh, z)
+    MUV_med = func_MUV_lgMs(lgMs_med, z=z)
+    MUV_sig = ((2.3 * lgMs_sig) ** 2 + 0.3**2) ** 0.5  # 0.3? TBC
+
+    if attenuation:
+        f_FFB_ = ffb_fFFB_sf(lgMh, z)
+        f_SF_ = 1 - um_fQ(lgMh, z)
+        f_ffb = f_SF_ * f_FFB_
+
+        AUV_um = um_AUV(MUV, z=z)
+        MUV_med_um = MUV_med + AUV_um
+
+        if attenuation == "shell":
+            AUV_ffb = ffb_AUV_shell(lgMh, z)
+        elif attenuation == "disc":
+            AUV_ffb = ffb_AUV_disc(lgMh, z)
+        elif attenuation == "average":
+            AUV_ffb = (ffb_AUV_disc(lgMh, z) + ffb_AUV_shell(lgMh, z)) * 0.5
+        MUV_med_ffb = MUV_med + AUV_ffb
+
+        prob = f_ffb * normal(MUV, MUV_med_ffb, MUV_sig) + (1 - f_ffb) * normal(
+            MUV, MUV_med_um, MUV_sig
+        )
+    else:
+        prob = normal(MUV, MUV_med, MUV_sig)
+    return prob
 
 
 # Halo mass func and number densities
@@ -460,7 +509,7 @@ def func_sfr_SFE(lgMh, z):
 def func_dN_dlgMsub_cond(lgMsub, lgMh):
     "unevolved subhalo mass funct, Han+ 2017, HBT+, table 1 and eq 4"
     a1, alpha1, a2, alpha2, b, beta = 0.11, 0.95, 0.32, 0.08, 8.9, 1.9
-    mu = 10**(lgMsub - lgMh)
+    mu = 10 ** (lgMsub - lgMh)
     dndlgmu = (a1 * mu**-alpha1 + a2 * mu**-alpha2) * exp(-b * mu**beta) * log(10)
     return dndlgmu
 
@@ -469,14 +518,25 @@ class HaloMassFunc:
     def __init__(self, z, compute_sub=False):
         nu_max = 10  # maximum peak height, lgM_max=16.7 at z=0, 11.6 at z=18
         nu_max = 8  # maximum peak height, lgM_max=16.5 at z=0, 10.8 at z=18
-        self.lgMh_max = log10(peaks.massFromPeakHeight(nu=nu_max, z=z, **ps_ext_args) / cosmo.h)
+        self.lgMh_max = log10(
+            peaks.massFromPeakHeight(nu=nu_max, z=z, **ps_ext_args) / cosmo.h
+        )
         self.z = z
 
         # central MF
         lgMcen = np.arange(5, self.lgMh_max + 0.001, 0.025)
-        dNdlgMcen = mass_function.massFunction(
-            10**lgMcen * cosmo.h, z=z, mdef='vir', model='Watson13'.lower(),
-            q_out='dndlnM', **ps_ext_args) * cosmo.h**3 * log(10)  # comoving Mpc^-3
+        dNdlgMcen = (
+            mass_function.massFunction(
+                10**lgMcen * cosmo.h,
+                z=z,
+                mdef="vir",
+                model="Watson13".lower(),
+                q_out="dndlnM",
+                **ps_ext_args,
+            )
+            * cosmo.h**3
+            * log(10)
+        )  # comoving Mpc^-3
         self.func_lgdNdlgM_cen = Akima1DInterpolator(lgMcen, log10(dNdlgMcen))
         self.lgMcen, self.dNdlgMcen = lgMcen, dNdlgMcen
 
@@ -490,7 +550,7 @@ class HaloMassFunc:
             lgMsub = lgMcen
             lgMcen_ = lgMsub + (self.lgMh_max - lgMsub) * x0.reshape(-1, 1)
             dNdlgMsub_cond = func_dN_dlgMsub_cond(lgMsub, lgMcen_)
-            dNdlgMcen_ = 10**self.func_lgdNdlgM_cen(lgMcen_)
+            dNdlgMcen_ = 10 ** self.func_lgdNdlgM_cen(lgMcen_)
             dNdlgMsub = (dNdlgMsub_cond * dNdlgMcen_ * w0.reshape(-1, 1)).sum(0)
             self.func_lgdNdlgM_sub = Akima1DInterpolator(lgMsub, log10(dNdlgMsub))
 
@@ -499,6 +559,7 @@ class HaloMassFunc:
 
         self.compute_dNdlgMs()
         self.compute_dNdMUV_Ms()
+        self.compute_dNdMUV_Ms_new()
 
     def compute_dNdlgSFR(self):
         lgSFR = np.linspace(-6, 6, 121)
@@ -518,7 +579,9 @@ class HaloMassFunc:
         AUV, dAUV_dMUV = um_AUV(MUV, z=self.z, derivative=True)
         self.MUV_SFR_obs = MUV + AUV
         self.dNdMUV_SFR_obs = dNdMUV / np.abs(1 + dAUV_dMUV)
-        self.func_lgdNdMUV_SFR_obs = Akima1DInterpolator(self.MUV_SFR_obs[::-1], log10(self.dNdMUV_SFR_obs)[::-1])
+        self.func_lgdNdMUV_SFR_obs = Akima1DInterpolator(
+            self.MUV_SFR_obs[::-1], log10(self.dNdMUV_SFR_obs)[::-1]
+        )
 
     def compute_dNdlgMs(self):
         lgMh, dNdlgMh = self.lgMcen, self.dNdlgMcen
@@ -538,24 +601,36 @@ class HaloMassFunc:
         AUV, dAUV_dMUV = um_AUV(MUV, z=self.z, derivative=True)
         self.MUV_Ms_obs = MUV + AUV
         self.dNdMUV_Ms_obs = dNdMUV / np.abs(1 + dAUV_dMUV)
-        self.func_lgdNdMUV_Ms_obs = Akima1DInterpolator(self.MUV_Ms_obs[::-1], log10(self.dNdMUV_Ms_obs)[::-1])
+        self.func_lgdNdMUV_Ms_obs = Akima1DInterpolator(
+            self.MUV_Ms_obs[::-1], log10(self.dNdMUV_Ms_obs)[::-1]
+        )
+
+    def compute_dNdMUV_Ms_new(self, attenuation=False):
+        lgMh, dNdlgMh = self.lgMcen, self.dNdlgMcen
+        MUV = np.arange(-28, -15 + 0.001, 0.1)
+        pr_MUV_lgMh = p_MUV_lgMh(
+            MUV.reshape(-1, 1), lgMh, self.z, attenuation=attenuation
+        )
+        dNdMUV = simps1d(pr_MUV_lgMh * dNdlgMh, dx=lgMh[1] - lgMh[0])
+        self.func_lgdNdMUV = Akima1DInterpolator(MUV, log10(dNdMUV))
+        self.MUV, self.dNdMUV = MUV, dNdMUV
 
 
 # Halo growth history
 # -----------------------------
 def mah_interp(z_ob, lgM_ob, z_hist):
-    if HALO_MAH_MODEL == 'Zhao09':
+    if HALO_MAH_MODEL == "Zhao09":
         return mah_interp_Zhao09(z_ob, lgM_ob, z_hist)
-    elif HALO_MAH_MODEL == 'Dekel13':
+    elif HALO_MAH_MODEL == "Dekel13":
         return mah_interp_Dekel13(z_ob, lgM_ob, z_hist)
     else:
         raise ValueError("HALO_MAH_MODEL' should be Dekel13 or Zhao09")
 
 
 def mah_der_interp(z_ob, lgM_ob, z_hist):
-    if HALO_MAH_MODEL == 'Zhao09':
+    if HALO_MAH_MODEL == "Zhao09":
         return mah_der_interp_Zhao09(z_ob, lgM_ob, z_hist)
-    elif HALO_MAH_MODEL == 'Dekel13':
+    elif HALO_MAH_MODEL == "Dekel13":
         return mah_der_interp_Dekel13(z_ob, lgM_ob, z_hist)
     else:
         raise ValueError("HALO_MAH_MODEL' should be Dekel13 or Zhao09")
@@ -567,27 +642,28 @@ def mah_interp_Zhao09(z_ob, lgM_ob, z_hist):
     lgM should be between 1.5e5Msun and 8 sigma peak.
     z should be between 0 and 30.
     """
-    fp = H5Attr('mandc-1.03main/run/mchistory_cDekel.h5', lazy=False)
-    z_list = np.sort([fp[f'lg(z+1)/{key}/ziz'][0] for key in fp['lg(z+1)']])
+    fp = H5Attr("mandc-1.03main/run/mchistory_cDekel.h5", lazy=False)
+    z_list = np.sort([fp[f"lg(z+1)/{key}/ziz"][0] for key in fp["lg(z+1)"]])
     lgzp1_list = log10(z_list + 1)
 
     lgzp1_ob = log10(z_ob + 1)
     lgzp1_hist = log10(z_hist + 1)
 
-    ix_z = lgzp1_list.searchsorted(lgzp1_ob, side='right') - 1  # find closest z bin
-    gp = fp[f'lg(z+1)/{lgzp1_list[ix_z]:.2f}']
+    ix_z = lgzp1_list.searchsorted(lgzp1_ob, side="right") - 1  # find closest z bin
+    gp = fp[f"lg(z+1)/{lgzp1_list[ix_z]:.2f}"]
 
     lgM_z = log10(gp.Miz)
     lgM_i = lgM_z.T[0]
     lgzp1_i = log10(gp.ziz + 1)
-    mah_interp = RegularGridInterpolator([lgM_i, lgzp1_i], lgM_z,
-                                         method='linear', bounds_error=False)
+    mah_interp = RegularGridInterpolator(
+        [lgM_i, lgzp1_i], lgM_z, method="linear", bounds_error=False
+    )
 
     x, y = np.broadcast_arrays(lgM_i, lgzp1_ob)
     lgM_zob = mah_interp(np.stack([x, y], axis=-1))  # lgM[z_ob | lgM_i, z_0]
     lgM_i_ = np.interp(lgM_ob, lgM_zob, lgM_i)  # lgM[z_0 | lgM_ob, z_ob]
 
-    x, y = np.meshgrid(lgM_i_, lgzp1_hist, indexing='ij')
+    x, y = np.meshgrid(lgM_i_, lgzp1_hist, indexing="ij")
     lgM_hist = mah_interp(np.stack([x, y], axis=-1))
 
     if np.isscalar(z_hist):
@@ -602,31 +678,33 @@ def mah_der_interp_Zhao09(z_ob, lgM_ob, z_hist):
     lgM should be between 1.5e5Msun and 8 sigma peak.
     z should be between 0 and 30.
     """
-    fp = H5Attr('mandc-1.03main/run/mchistory_cDekel.h5', lazy=False)
-    z_list = np.sort([fp[f'lg(z+1)/{key}/ziz'][0] for key in fp['lg(z+1)']])
+    fp = H5Attr("mandc-1.03main/run/mchistory_cDekel.h5", lazy=False)
+    z_list = np.sort([fp[f"lg(z+1)/{key}/ziz"][0] for key in fp["lg(z+1)"]])
     lgzp1_list = log10(z_list + 1)
 
     lgzp1_ob = log10(z_ob + 1)
     lgzp1_hist = log10(z_hist + 1)
 
-    ix_z = lgzp1_list.searchsorted(lgzp1_ob, side='right') - 1  # find closest z bin
-    gp = fp[f'lg(z+1)/{lgzp1_list[ix_z]:.2f}']
+    ix_z = lgzp1_list.searchsorted(lgzp1_ob, side="right") - 1  # find closest z bin
+    gp = fp[f"lg(z+1)/{lgzp1_list[ix_z]:.2f}"]
 
     lgM_z = log10(gp.Miz)
     lgMdot_z = log10(gp.Mdot)
     lgM_i = lgM_z.T[0]
     lgzp1_i = log10(gp.ziz + 1)
-    mah_interp = RegularGridInterpolator([lgM_i, lgzp1_i], lgM_z,
-                                         method='linear', bounds_error=False)
+    mah_interp = RegularGridInterpolator(
+        [lgM_i, lgzp1_i], lgM_z, method="linear", bounds_error=False
+    )
 
     x, y = np.broadcast_arrays(lgM_i, lgzp1_ob)
     lgM_zob = mah_interp(np.stack([x, y], axis=-1))  # lgM[z_ob | lgM_i, z_0]
     lgM_i_ = np.interp(lgM_ob, lgM_zob, lgM_i)  # lgM[z_0 | lgM_ob, z_ob]
 
-    mdot_interp = RegularGridInterpolator([lgM_i, lgzp1_i], lgMdot_z,
-                                          method='linear', bounds_error=False)
+    mdot_interp = RegularGridInterpolator(
+        [lgM_i, lgzp1_i], lgMdot_z, method="linear", bounds_error=False
+    )
 
-    x, y = np.meshgrid(lgM_i_, lgzp1_hist, indexing='ij')
+    x, y = np.meshgrid(lgM_i_, lgzp1_hist, indexing="ij")
     lgMdot_hist = mdot_interp(np.stack([x, y], axis=-1))
 
     if np.isscalar(z_hist):
@@ -640,17 +718,33 @@ def mah_interp_Dekel13(z_ob, lgM_ob, z_hist):
     t1 = 17.00  # Gyr, H0=70, omegam=0.3
     alpha = 1.5 * s * t1
 
-    lgM_ob_T = lgM_ob if np.isscalar(lgM_ob) else lgM_ob.reshape(-1, 1)  # transpose of lgM_ob
+    lgM_ob_T = (
+        lgM_ob if np.isscalar(lgM_ob) else lgM_ob.reshape(-1, 1)
+    )  # transpose of lgM_ob
 
     if DEKEL13_BETA == 0:
         lgM_hist = lgM_ob_T - alpha * (z_hist - z_ob) / log(10)
     else:
         beta, lgM_c0 = DEKEL13_BETA, abs(DEKEL13_PIVOT)
         if DEKEL13_PIVOT > 0:
-            lgM_hist = lgM_c0 - log10(10**(-beta * (lgM_ob_T - lgM_c0)) + alpha * beta * (z_hist - z_ob)) / beta
+            lgM_hist = (
+                lgM_c0
+                - log10(
+                    10 ** (-beta * (lgM_ob_T - lgM_c0)) + alpha * beta * (z_hist - z_ob)
+                )
+                / beta
+            )
         else:
             # negative for varying pivot
-            lgM_hist = lgM_c0 - log10(10**(-beta * (lgM_ob_T - lgM_c0)) + exp(alpha * beta * (z_hist - z_ob)) - 1) / beta
+            lgM_hist = (
+                lgM_c0
+                - log10(
+                    10 ** (-beta * (lgM_ob_T - lgM_c0))
+                    + exp(alpha * beta * (z_hist - z_ob))
+                    - 1
+                )
+                / beta
+            )
 
     if np.isscalar(z_hist):
         return lgM_hist.reshape(np.shape(lgM_ob))
@@ -664,7 +758,7 @@ def mah_der_interp_Dekel13(z_ob, lgM_ob, z_hist):
     alpha = 1.5 * s * t1
 
     lgM_hist = mah_interp_Dekel13(z_ob, lgM_ob, z_hist)
-    lgMdot_hist = lgM_hist + log10(s * (1 + z_hist)**2.5) - 9
+    lgMdot_hist = lgM_hist + log10(s * (1 + z_hist) ** 2.5) - 9
 
     if DEKEL13_BETA != 0:
         beta, lgM_c0 = DEKEL13_BETA, abs(DEKEL13_PIVOT)
@@ -683,13 +777,14 @@ def mah_der_interp_Dekel13(z_ob, lgM_ob, z_hist):
 # FFB galaxy size
 # -----------------------------
 
+
 def ffb_rdisc(lgMh, z):
     """
     Mh: Msun
     z:
     rdisc: kpc
     """
-    rdisc = 0.31 * 10**((lgMh - 10.8) / 3) * ((1 + z) / 10)**-1
+    rdisc = 0.31 * 10 ** ((lgMh - 10.8) / 3) * ((1 + z) / 10) ** -1
     return rdisc
 
 
@@ -699,16 +794,16 @@ def ffb_rshell(lgMh, z):
     z:
     rdisc: kpc
     """
-    rsh = 0.79 * 10**((lgMh - 10.8) * -0.06) * ((1 + z) / 10)**-2.5
+    rsh = 0.79 * 10 ** ((lgMh - 10.8) * -0.06) * ((1 + z) / 10) ** -2.5
     return rsh
 
 
 def ffb_rdisk_Mcrit(z):
-    return 0.29 * ((1 + z) / 10)**-3.07
+    return 0.29 * ((1 + z) / 10) ** -3.07
 
 
 def ffb_rshell_Mcrit(z):
-    return 0.79 * ((1 + z) / 10)**-2.13
+    return 0.79 * ((1 + z) / 10) ** -2.13
 
 
 def ffb_lgMcrit_disc(z):
@@ -731,28 +826,39 @@ def AUV_tau(tau):
 
 
 def ffb_f_sfe(sfe):
-    return (5 * sfe * (1 - 0.8 * sfe))**0.5
+    return (5 * sfe * (1 - 0.8 * sfe)) ** 0.5
 
 
 def ffb_tau_shell(sfe, lgMh, z):
     "UV optical depth for shell scenario, Li+23, eq 29"
-    return (1.65 + 0.27) * ffb_f_sfe(sfe) * 10**(1.2 * (lgMh - 10.8)) * ((1 + z) / 10)**5
+    # for the shell the average of r>0 and r>R
+    # tau = (1.65 + 0.27) * ffb_f_sfe(sfe) * 10**(1.2 * (lgMh - 10.8)) * ((1 + z) / 10)**5
+    tau = (
+        (-log(0.5 * (exp(-1.65 - 0.27) + exp(-0.27))))
+        * ffb_f_sfe(sfe)
+        * 10 ** (1.2 * (lgMh - 10.8))
+        * ((1 + z) / 10) ** 5
+    )
+    return tau
 
 
 def ffb_tau_disc(sfe, lgMh, z):
     "UV optical depth for disc scenario, Li+23, eq 29"
-    return (2.10 + 0.35) * ffb_f_sfe(sfe) * 10**(0.81 * (lgMh - 10.8)) * ((1 + z) / 10)**3.5
+    # for the disc only r>R
+    # tau = (2.10 + 0.35) * ffb_f_sfe(sfe) * 10**(0.81 * (lgMh - 10.8)) * ((1 + z) / 10)**3.5
+    tau = (0.35) * ffb_f_sfe(sfe) * 10 ** (0.81 * (lgMh - 10.8)) * ((1 + z) / 10) ** 3.5
+    return tau
 
 
 def ffb_AUV_shell(lgMh, z):
-    sfe = func_sfr_SFE(lgMh, z)
+    sfe = func_SFE_instant(lgMh, z)
     tau = ffb_tau_shell(sfe, lgMh, z)
     AUV = AUV_tau(tau)
     return AUV
 
 
 def ffb_AUV_disc(lgMh, z):
-    sfe = func_sfr_SFE(lgMh, z)
+    sfe = func_SFE_instant(lgMh, z)
     tau = ffb_tau_disc(sfe, lgMh, z)
     AUV = AUV_tau(tau)
     return AUV
@@ -763,6 +869,7 @@ def ffb_AUV_disc(lgMh, z):
 # author: Zhaozhou Li
 # source: https://github.com/syrte/handy/blob/master/integrate.py
 
+
 def slice_set(ix, ndim, axis):
     # author: Zhaozhou Li
     # source: https://github.com/syrte/handy/blob/master/integrate.py
@@ -772,14 +879,13 @@ def slice_set(ix, ndim, axis):
 
 
 def sum2d(a):
-    """sum of last two dimensions
-    """
+    """sum of last two dimensions"""
     # author: Zhaozhou Li
     # source: https://github.com/syrte/handy/blob/master/integrate.py
     return a.reshape(*a.shape[:-2], -1).sum(-1)
 
 
-def simps1d(y, dx=1.0, axis=-1, even='avg'):
+def simps1d(y, dx=1.0, axis=-1, even="avg"):
     # author: Zhaozhou Li
     # source: https://github.com/syrte/handy/blob/master/integrate.py
     y = np.asarray(y)
@@ -793,21 +899,22 @@ def simps1d(y, dx=1.0, axis=-1, even='avg'):
         ixe = slice_set(slice(2, -2, 2), ndim, axis)  # even
         out = (y[ix0] + y[ix1] + 4 * y[ixo].sum(axis) + 2 * y[ixe].sum(axis)) * (dx / 3)
         return out
-    elif even == 'avg':
+    elif even == "avg":
         ix0 = slice_set(0, ndim, axis)
         ix1 = slice_set(-1, ndim, axis)
         ix2 = slice_set(1, ndim, axis)
         ix3 = slice_set(-2, ndim, axis)
         ix4 = slice_set(slice(2, -2), ndim, axis)
-        out = (2.5 * (y[ix0] + y[ix1]) + 6.5 * (y[ix2] + y[ix3]) +
-               6 * y[ix4].sum(axis)) * (dx / 6)
+        out = (
+            2.5 * (y[ix0] + y[ix1]) + 6.5 * (y[ix2] + y[ix3]) + 6 * y[ix4].sum(axis)
+        ) * (dx / 6)
         return out
-    elif even == 'first':
+    elif even == "first":
         ix0 = slice_set(-1, ndim, axis)
         ix1 = slice_set(-2, ndim, axis)
         ix3 = slice_set(slice(None, -1), ndim, axis)
         return simps1d(y[ix3], dx, axis) + 0.5 * dx * (y[ix0] + y[ix1])
-    elif even == 'last':
+    elif even == "last":
         ix0 = slice_set(0, ndim, axis)
         ix1 = slice_set(1, ndim, axis)
         ix3 = slice_set(slice(1, None), ndim, axis)
@@ -827,23 +934,35 @@ def simps2d(z, dx=1, dy=1):
     z = np.asarray(z)
     nx, ny = z.shape[-2:]
     if nx % 2 != 1 or ny % 2 != 1:
-        raise ValueError('input array should be odd shape')
+        raise ValueError("input array should be odd shape")
 
     ixo = slice(1, -1, 2)  # odd
     ixe = slice(2, -2, 2)  # even
 
     # corner points, with weight 1
-    s1 = (z[..., 0, 0] + z[..., 0, -1] + z[..., -1, 0] + z[..., -1, -1])
+    s1 = z[..., 0, 0] + z[..., 0, -1] + z[..., -1, 0] + z[..., -1, -1]
 
     # edges excluding corners, with weight 2 or 4
-    s2 = 2 * (z[..., 0, ixe].sum(-1) + z[..., -1, ixe].sum(-1) +
-              z[..., ixe, 0].sum(-1) + z[..., ixe, -1].sum(-1))
-    s3 = 4 * (z[..., 0, ixo].sum(-1) + z[..., -1, ixo].sum(-1) +
-              z[..., ixo, 0].sum(-1) + z[..., ixo, -1].sum(-1))
+    s2 = 2 * (
+        z[..., 0, ixe].sum(-1)
+        + z[..., -1, ixe].sum(-1)
+        + z[..., ixe, 0].sum(-1)
+        + z[..., ixe, -1].sum(-1)
+    )
+    s3 = 4 * (
+        z[..., 0, ixo].sum(-1)
+        + z[..., -1, ixo].sum(-1)
+        + z[..., ixo, 0].sum(-1)
+        + z[..., ixo, -1].sum(-1)
+    )
 
     # interior points, with weight 4, 8 or 16
-    s4 = (4 * sum2d(z[..., ixe, ixe]) + 16 * sum2d(z[..., ixo, ixo]) +
-          8 * sum2d(z[..., ixe, ixo]) + 8 * sum2d(z[..., ixo, ixe]))
+    s4 = (
+        4 * sum2d(z[..., ixe, ixe])
+        + 16 * sum2d(z[..., ixo, ixo])
+        + 8 * sum2d(z[..., ixe, ixo])
+        + 8 * sum2d(z[..., ixo, ixe])
+    )
 
     out = (s1 + s2 + s3 + s4) * (dx * dy / 9)
     return out
