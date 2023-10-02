@@ -208,6 +208,9 @@ def um_lgMs_med_basic(lgMh, z, model="obs"):
     delta = DELTA_0
     gamma = 10 ** (GAMMA_0 + a1 * GAMMA_A + z * GAMMA_Z)
 
+    if UM_SHMR_MINSLOP is not None:
+        beta = max(beta, UM_SHMR_MINSLOP)  # slope for high mass end
+
     x = lgMh - lgm1
     lgMs = lgm1 + (
         eff
@@ -237,24 +240,24 @@ def um_lgMs_med(lgMh, z):
     "ensure dlgMs/dlgMh >= UM_SHMR_MINSLOP"
     lgMs = um_lgMs_med_basic(lgMh, z)
 
-    if UM_SHMR_MINSLOP is not None:
-        lgMh_ = np.linspace(0, 16, 161)
-        lgMs_ = um_lgMs_med_basic(lgMh_, z=z)
+    # if UM_SHMR_MINSLOP is not None:
+    #     lgMh_ = np.linspace(0, 16, 161)
+    #     lgMs_ = um_lgMs_med_basic(lgMh_, z=z)
 
-        f = CubicSpline(lgMh_, lgMs_)
-        roots = f.derivative().solve(UM_SHMR_MINSLOP, extrapolate=False)
-        if len(roots) == 0:
-            lgMh_peak = lgMh_[-1]
-        else:
-            lgMh_peak = roots[0]
-        lgMs_peak = f(lgMh_peak)
+    #     f = CubicSpline(lgMh_, lgMs_)
+    #     roots = f.derivative().solve(UM_SHMR_MINSLOP, extrapolate=False)
+    #     if len(roots) == 0:
+    #         lgMh_peak = lgMh_[-1]
+    #     else:
+    #         lgMh_peak = roots[0]
+    #     lgMs_peak = f(lgMh_peak)
 
-        if np.isscalar(lgMh):
-            if lgMh > lgMh_peak:
-                lgMs = lgMs_peak + UM_SHMR_MINSLOP * (lgMh - lgMh_peak)
-        else:
-            ix = lgMh > lgMh_peak
-            lgMs[ix] = lgMs_peak + UM_SHMR_MINSLOP * (lgMh[ix] - lgMh_peak)
+    #     if np.isscalar(lgMh):
+    #         if lgMh > lgMh_peak:
+    #             lgMs = lgMs_peak + UM_SHMR_MINSLOP * (lgMh - lgMh_peak)
+    #     else:
+    #         ix = lgMh > lgMh_peak
+    #         lgMs[ix] = lgMs_peak + UM_SHMR_MINSLOP * (lgMh[ix] - lgMh_peak)
 
     return lgMs
 
