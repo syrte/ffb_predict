@@ -5,7 +5,7 @@ author: Zhaozhou Li (lizz.astro@gmail.com)
 """
 import numpy as np
 from numpy import pi, log10, log, exp
-from scipy.interpolate import CubicSpline, Akima1DInterpolator
+from scipy.interpolate import Akima1DInterpolator
 from scipy.special import erf, roots_legendre
 from scipy.interpolate import RegularGridInterpolator
 from astropy import units as u
@@ -244,7 +244,7 @@ def um_lgMs_med(lgMh, z):
     #     lgMh_ = np.linspace(0, 16, 161)
     #     lgMs_ = um_lgMs_med_basic(lgMh_, z=z)
 
-    #     f = CubicSpline(lgMh_, lgMs_)
+    #     f = Akima1DInterpolator(lgMh_, lgMs_)
     #     roots = f.derivative().solve(UM_SHMR_MINSLOP, extrapolate=False)
     #     if len(roots) == 0:
     #         lgMh_peak = lgMh_[-1]
@@ -404,7 +404,9 @@ def func_lgMs_med(lgMh, z, z_max=30, n_grid=200):
         cosmo.lookbackTime(z_hist, derivative=1) * log(10) * (1 + z_hist) * 1e9
     )  # yr/dex
 
-    func = CubicSpline(lgzp1_hist, dif_sfr * dtdlgzp1_hist, axis=1).antiderivative()
+    func = Akima1DInterpolator(
+        lgzp1_hist, dif_sfr * dtdlgzp1_hist, axis=1
+    ).antiderivative()
     dif_Ms = func(lgzp1_hist[-1]) - func(lgzp1_hist[0])
 
     # UM mass and FFB correction
@@ -427,7 +429,7 @@ def um_lgMs_med_integ(lgMh, z, z_max=30, n_grid=200):
         cosmo.lookbackTime(z_hist, derivative=1) * log(10) * (1 + z_hist) * 1e9
     )  # yr/dex
 
-    func = CubicSpline(lgzp1_hist, sfr * dtdlgzp1_hist, axis=1).antiderivative()
+    func = Akima1DInterpolator(lgzp1_hist, sfr * dtdlgzp1_hist, axis=1).antiderivative()
     Ms = func(lgzp1_hist[-1]) - func(lgzp1_hist[0]) + 1
     return log10(Ms)
 
@@ -445,7 +447,9 @@ def func_lgMh_med_integ(lgMh, z, z_max=30, n_grid=200):
         cosmo.lookbackTime(z_hist, derivative=1) * log(10) * (1 + z_hist) * 1e9
     )  # yr/dex
 
-    func = CubicSpline(lgzp1_hist, Mdot * dtdlgzp1_hist, axis=1).antiderivative()
+    func = Akima1DInterpolator(
+        lgzp1_hist, Mdot * dtdlgzp1_hist, axis=1
+    ).antiderivative()
     Mh = func(lgzp1_hist[-1]) - func(lgzp1_hist[0]) + 1
     return log10(Mh)
 
@@ -795,10 +799,11 @@ def ffb_rshell(lgMh, z):
     """
     Mh: Msun
     z:
-    rdisc: kpc
+    rshell: kpc
+    Note Re is about half of rshell
     """
-    rsh = 0.79 * 10 ** ((lgMh - 10.8) * -0.06) * ((1 + z) / 10) ** -2.5
-    return rsh
+    rshell = 0.79 * 10 ** ((lgMh - 10.8) * -0.06) * ((1 + z) / 10) ** -2.5
+    return rshell
 
 
 def ffb_rdisk_Mcrit(z):
