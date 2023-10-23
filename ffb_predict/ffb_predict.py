@@ -471,6 +471,7 @@ def func_Mdot_baryon(lgMh, z):
 
 
 def func_SFE_instant(lgMh, z):
+    "SFR / Mdot_baryon"
     SFR = func_sfr_avg(lgMh, z)
     Mdot_baryon = func_Mdot_baryon(lgMh, z)
     return SFR / Mdot_baryon
@@ -783,8 +784,6 @@ def mah_der_interp_Dekel13(z_ob, lgM_ob, z_hist):
 
 # FFB galaxy size
 # -----------------------------
-
-
 def ffb_rdisc(lgMh, z):
     """
     Mh: Msun
@@ -795,14 +794,33 @@ def ffb_rdisc(lgMh, z):
     return rdisc
 
 
-def ffb_rshell(lgMh, z):
+def ffb_rshell2(lgMh, z):
+    """
+    Mh: Msun
+    z:
+    rshell: kpc
+    Note Re is about half of rshell
+    obsolete estimate
+    """
+    rshell = 0.79 * 10 ** ((lgMh - 10.8) * -0.06) * ((1 + z) / 10) ** -2.5
+    return rshell
+
+
+def ffb_rshell(lgMh, z, eps=1):
     """
     Mh: Msun
     z:
     rshell: kpc
     Note Re is about half of rshell
     """
-    rshell = 0.79 * 10 ** ((lgMh - 10.8) * -0.06) * ((1 + z) / 10) ** -2.5
+    eta = 5 / eps - 4
+    rshell = (
+        0.56
+        * eta**0.25
+        * eps**0.5
+        * 10 ** ((lgMh - 10.8) * (1 / 6))
+        * ((1 + z) / 10) ** -0.75
+    )
     return rshell
 
 
@@ -810,8 +828,13 @@ def ffb_rdisk_Mcrit(z):
     return 0.29 * ((1 + z) / 10) ** -3.07
 
 
-def ffb_rshell_Mcrit(z):
+def ffb_rshell2_Mcrit(z):
     return 0.79 * ((1 + z) / 10) ** -2.13
+
+
+def ffb_rshell_Mcrit(z, eps=1):
+    eta = 5 / eps - 4
+    return 0.56 * eta**0.25 * eps**0.5 * ((1 + z) / 10) ** -1.78
 
 
 def ffb_lgMcrit_disc(z):
@@ -824,6 +847,67 @@ def ffb_lgMcrit_shell(z):
     "Halo mass threshold for FFB"
     lgMh_crit = 10.8 + log10(1) - 6.2 * log10((1 + z) / 10)  # D23, eq 62
     return lgMh_crit
+
+
+# FFB gas fraction
+# -----------------------------
+def ffb_Mgas(lgMh, z, mode="shell"):
+    eps = func_SFE_instant(lgMh, z)
+    eta = 5 / eps - 4
+    if mode == "shell":
+        R = ffb_rshell(lgMh, z, eps=eps)
+    elif mode == "disc":
+        R = ffb_rdisc(lgMh, z) * 2
+    SFR = ffb_sfr_med(lgMh, z)
+    mgas = 1.04e5 * eta**1.5 * SFR * R
+    return mgas.clip(0, 10**lgMh)
+
+
+def ffb_fgas(lgMh, z, mode="shell"):
+    mgas = ffb_Mgas(lgMh, z, mode=mode)
+    mstar = 10 ** func_lgMs_med(lgMh, z)
+    return mgas / mstar
+
+
+def ffb_gasfrac_shell(lgMh, z, eps=1):
+    eta = 5 / eps - 4
+    Mz_dep = 10 ** ((lgMh - 10.8) * 0.31) * ((1 + z) / 10) ** 1.75
+    return 0.61e-2 * (eta / 6) ** 1.75 * (eps / 0.5) ** 0.5 * Mz_dep
+
+
+def ffb_gasfrac_disk(lgMh, z, eps=1):
+    eta = 5 / eps - 4
+    Mz_dep = 10 ** ((lgMh - 10.8) * 0.47) * ((1 + z) / 10) ** 1.5
+    return 0.61e-2 * (eta / 6) ** 1.5 * Mz_dep
+
+
+def ffb_gasfrac_shell_Mcrit(lgMh, z, eps=1):
+    eta = 5 / eps - 4
+    Mz_dep = ((1 + z) / 10) ** -0.17
+    return 0.61e-2 * (eta / 6) ** 1.75 * (eps / 0.5) ** 0.5 * Mz_dep
+
+
+def ffb_gasfrac_disk_Mcrit(lgMh, z, eps=1):
+    eta = 5 / eps - 4
+    Mz_dep = ((1 + z) / 10) ** -1.4
+    return 0.55e-2 * (eta / 6) ** 1.5 * Mz_dep
+
+
+# FFB metallicity
+# -----------------------------
+def ffb_str_coverage(lgMh, z):
+    eps = func_SFE_instant(lgMh, z)
+    eta = 5 / eps - 4
+    Mz_dep = 10 ** ((lgMh - 10.8) * 0.333) * ((1 + z) / 10) ** 0.5
+    f_omega = 0.22 * eta**-0.5 * eps**-1 * Mz_dep
+    return f_omega.clip(0, 1)
+
+
+def ffb_metal(lgMh, z, Zsn=1, Zin=0.1):
+    eps = func_SFE_instant(lgMh, z)
+    f_omega = ffb_str_coverage(lgMh, z)
+    Zmix = Zin + 0.2 * eps * f_omega / (1 + (1 - 0.8 * eps) * f_omega) * (Zsn - Zin)
+    return Zmix
 
 
 # FFB dust attenuation
@@ -840,9 +924,10 @@ def ffb_f_sfe(sfe):
 def ffb_tau_shell(sfe, lgMh, z):
     "UV optical depth for shell scenario, Li+23, eq 29"
     # for the shell the average of r>0 and r>R
-    # tau = (1.65 + 0.27) * ffb_f_sfe(sfe) * 10**(1.2 * (lgMh - 10.8)) * ((1 + z) / 10)**5
+    # tau = (2.32 + 0.39) * ffb_f_sfe(sfe) * 10**(1.2 * (lgMh - 10.8)) * ((1 + z) / 10)**5
     tau = (
-        (-log(0.5 * (exp(-1.65 - 0.27) + exp(-0.27))))
+        # (-log(0.5 * (exp(-1.65 - 0.27) + exp(-0.27))))
+        (-log(0.5 * (exp(-2.32 - 0.39) + exp(-0.39))))
         * ffb_f_sfe(sfe)
         * 10 ** (1.2 * (lgMh - 10.8))
         * ((1 + z) / 10) ** 5
@@ -974,3 +1059,30 @@ def simps2d(z, dx=1, dy=1):
 
     out = (s1 + s2 + s3 + s4) * (dx * dy / 9)
     return out
+
+
+def amap(func, *args):
+    """Array version of build-in map
+    amap(function, sequence[, sequence, ...]) -> array
+    Examples
+    --------
+    >>> amap(lambda x: x**2, 1)
+    array(1)
+    >>> amap(lambda x: x**2, [1, 2])
+    array([1, 4])
+    >>> amap(lambda x,y: y**2 + x**2, 1, [1, 2])
+    array([2, 5])
+    >>> amap(lambda x: (x, x), 1)
+    array([1, 1])
+    >>> amap(lambda x,y: [x**2, y**2], [1,2], [3,4])
+    array([[1, 9], [4, 16]])
+    """
+    # author: Zhaozhou Li
+    # source: https://github.com/syrte/handy/blob/master/misc.py
+    args = np.broadcast(*args)
+    res = np.array([func(*arg) for arg in args])
+    shape = args.shape + res.shape[1:]
+    if shape == ():
+        return res[0]
+    else:
+        return res.reshape(shape)
