@@ -35,8 +35,9 @@ UM_SHMR_MINSLOP = 0.3  # manual fix with minimum slop of dlnM*/dlnMh, None for d
 FFB_SFR_SIG = 0.3  # dex
 FFB_SFR_TH_SIG = 0.15  # dex, transition width, equiv to ~0.6 dex full transition region
 FFB_LGMH_PIVOT = 10.8  # Msun
-FFB_LGMH_QUENCH = 12  # Msun, can be None to disable
+FFB_LGMH_QUENCH = None  # Msun, can be None to disable
 FFB_SFE_MAX = 1  # maximum star formation efficiency for FFB galaxies
+FFB_FRAC_ALL = False  # if true, f_ffb is defined wrt all gals, otherwise wrt SF gals.
 HALO_MAH_MODEL = "Dekel13"  # Model for halo growth history, Dekel13 or Zhao09
 DEKEL13_BETA = 0.14  # beta=0.14 in Dekel+13 eq. 7
 DEKEL13_PIVOT = 12  # pivot mass
@@ -209,7 +210,7 @@ def um_lgMs_med_basic(lgMh, z, model="obs"):
     gamma = 10 ** (GAMMA_0 + a1 * GAMMA_A + z * GAMMA_Z)
 
     if UM_SHMR_MINSLOP is not None:
-        beta = max(beta, UM_SHMR_MINSLOP)  # slope for high mass end
+        beta = np.fmax(beta, UM_SHMR_MINSLOP)  # slope for high mass end
 
     x = lgMh - lgm1
     lgMs = lgm1 + (
@@ -296,7 +297,11 @@ def ffb_sfr_sig(lgMh, z):
     return FFB_SFR_SIG  # dex
 
 
-def ffb_fFFB_sf(lgMh, z):
+def ffb_fFFB(lgMh, z):
+    """
+    The meaning depends on the global variable FFB_FRAC_ALL
+    If true, f_ffb is defined wrt all gals, otherwise wrt SF gals.
+    """
     lgMh_crit = ffb_lgMh_crit(z)
     f_FFB = sigmoid(lgMh, m=lgMh_crit, s=FFB_SFR_TH_SIG, a=0, b=1)
     if FFB_LGMH_QUENCH is not None:
@@ -340,11 +345,18 @@ def p_lgSFR_lgMh(lgSFR, lgMh, z):
     med_q = um_sfr_med_q(lgMh, z)
     sig_q = um_sfr_sig_q(lgMh, z)
 
-    f_q = um_fQ(lgMh, z)
-    f_FFB_ = ffb_fFFB_sf(lgMh, z)
-    f_SF_ = 1 - f_q
-    f_ffb = f_SF_ * f_FFB_
-    f_sf = f_SF_ * (1 - f_FFB_)
+    if FFB_FRAC_ALL:
+        f_q_ = um_fQ(lgMh, z)
+        f_ffb = ffb_fFFB(lgMh, z)
+        f_um = 1 - f_ffb
+        f_q = f_um * f_q_
+        f_sf = f_um * (1 - f_q_)
+    else:
+        f_q = um_fQ(lgMh, z)
+        f_FFB_ = ffb_fFFB(lgMh, z)
+        f_SF_ = 1 - f_q
+        f_ffb = f_SF_ * f_FFB_
+        f_sf = f_SF_ * (1 - f_FFB_)
 
     prob = (
         f_ffb * normal(lgSFR, log10(med_ffb), sig_ffb)
@@ -362,11 +374,18 @@ def func_sfr_avg(lgMh, z):
     med_q = um_sfr_med_q(lgMh, z)
     sig_q = um_sfr_sig_q(lgMh, z)
 
-    f_q = um_fQ(lgMh, z)
-    f_FFB_ = ffb_fFFB_sf(lgMh, z)
-    f_SF_ = 1 - f_q
-    f_ffb = f_SF_ * f_FFB_
-    f_sf = f_SF_ * (1 - f_FFB_)
+    if FFB_FRAC_ALL:
+        f_q_ = um_fQ(lgMh, z)
+        f_ffb = ffb_fFFB(lgMh, z)
+        f_um = 1 - f_ffb
+        f_q = f_um * f_q_
+        f_sf = f_um * (1 - f_q_)
+    else:
+        f_q = um_fQ(lgMh, z)
+        f_FFB_ = ffb_fFFB(lgMh, z)
+        f_SF_ = 1 - f_q
+        f_ffb = f_SF_ * f_FFB_
+        f_sf = f_SF_ * (1 - f_FFB_)
 
     sfr_avg = (
         f_ffb * lgnormal_mean(med_ffb, sig_ffb)
@@ -381,12 +400,26 @@ def func_dif_sfr_avg(lgMh, z, Mdot):
     med_sf = um_sfr_med_sf(lgMh, z)
     sig_sf = um_sfr_sig_sf(lgMh, z)
 
-    f_q = um_fQ(lgMh, z)
-    f_FFB_ = ffb_fFFB_sf(lgMh, z)
-    f_SF_ = 1 - f_q
-    f_ffb = f_SF_ * f_FFB_
+    if FFB_FRAC_ALL:
+        med_q = um_sfr_med_q(lgMh, z)
+        sig_q = um_sfr_sig_q(lgMh, z)
 
-    dif_sfr_avg = f_ffb * (Mdot * FFB_SFE_MAX - lgnormal_mean(med_sf, sig_sf))
+        f_q = um_fQ(lgMh, z)
+        f_sf = 1 - f_q
+        f_ffb = ffb_fFFB(lgMh, z)
+
+        dif_sfr_avg = f_ffb * (
+            Mdot * FFB_SFE_MAX
+            - f_sf * lgnormal_mean(med_sf, sig_sf)
+            - f_q * lgnormal_mean(med_q, sig_q)
+        )
+    else:
+        f_q = um_fQ(lgMh, z)
+        f_FFB_ = ffb_fFFB(lgMh, z)
+        f_SF_ = 1 - f_q
+        f_ffb = f_SF_ * f_FFB_
+
+        dif_sfr_avg = f_ffb * (Mdot * FFB_SFE_MAX - lgnormal_mean(med_sf, sig_sf))
     return dif_sfr_avg.clip(0)  # min: 0
 
 
@@ -489,9 +522,12 @@ def p_MUV_lgMh(MUV, lgMh, z, attenuation=False):
     MUV_sig = ((2.3 * lgMs_sig) ** 2 + 0.3**2) ** 0.5  # 0.3? TBC
 
     if attenuation:
-        f_FFB_ = ffb_fFFB_sf(lgMh, z)
-        f_SF_ = 1 - um_fQ(lgMh, z)
-        f_ffb = f_SF_ * f_FFB_
+        if FFB_FRAC_ALL:
+            f_ffb = ffb_fFFB(lgMh, z)
+        else:
+            f_FFB_ = ffb_fFFB(lgMh, z)
+            f_SF_ = 1 - um_fQ(lgMh, z)
+            f_ffb = f_SF_ * f_FFB_
 
         AUV_um = um_AUV(MUV, z=z)
         MUV_med_um = MUV_med + AUV_um
@@ -866,7 +902,8 @@ def ffb_Mgas(lgMh, z, mode="shell"):
 def ffb_fgas(lgMh, z, mode="shell"):
     mgas = ffb_Mgas(lgMh, z, mode=mode)
     mstar = 10 ** func_lgMs_med(lgMh, z)
-    return mgas / mstar
+    # mhalo = 10**lgMh
+    return mgas / (mgas + mstar)
 
 
 def ffb_gasfrac_shell(lgMh, z, eps=1):
