@@ -818,8 +818,40 @@ def mah_der_interp_Dekel13(z_ob, lgM_ob, z_hist):
         return lgMdot_hist  # shape: lgM_ob, z_hist
 
 
+# FFB steady wind -- cooling
+# -----------------------------
+def ffb_rcool(lgMh, z, mode="shell"):
+    eps = func_SFE_instant(lgMh, z)
+    eta = 5 / eps - 4
+    rshell = ffb_radius(lgMh, z, mode=mode, lambdas=0.025)
+    SFR = func_sfr_avg(lgMh, z)
+    rcool = (
+        4 * (0.2 * eta) ** -2.92 * (rshell / 0.3) ** 1.79 * (0.3 * SFR / 10) ** -0.79
+    )
+    return rcool
+
+
 # FFB galaxy size
 # -----------------------------
+def ffb_radius(lgMh, z, mode="shell", lambdas=0.025):
+    # \sim 2Re
+    if mode == "shell":
+        eps = func_SFE_instant(lgMh, z)
+        eta = 5 / eps - 4
+        radius = (
+            0.56
+            * (lambdas / 0.025)
+            * (eta**0.25 * eps**0.5)
+            * 10 ** ((lgMh - 10.8) * (1 / 6))
+            * ((1 + z) / 10) ** -0.75
+        )
+    elif mode == "disc":
+        radius = (
+            0.62 * (lambdas / 0.025) * 10 ** ((lgMh - 10.8) / 3) * ((1 + z) / 10) ** -1
+        )
+    return radius
+
+
 def ffb_rdisc(lgMh, z):
     """
     Mh: Msun
@@ -890,11 +922,8 @@ def ffb_lgMcrit_shell(z):
 def ffb_Mgas(lgMh, z, mode="shell"):
     eps = func_SFE_instant(lgMh, z)
     eta = 5 / eps - 4
-    if mode == "shell":
-        R = ffb_rshell(lgMh, z, eps=eps)
-    elif mode == "disc":
-        R = ffb_rdisc(lgMh, z) * 2
-    SFR = ffb_sfr_med(lgMh, z)
+    R = ffb_radius(lgMh, z, mode=mode, lambdas=0.025)
+    SFR = func_sfr_avg(lgMh, z)
     mgas = 1.04e5 * eta**1.5 * SFR * R
     return mgas.clip(0, 10**lgMh)
 
@@ -935,7 +964,7 @@ def ffb_gasfrac_disk_Mcrit(lgMh, z, eps=1):
 def ffb_str_coverage(lgMh, z):
     eps = func_SFE_instant(lgMh, z)
     eta = 5 / eps - 4
-    Mz_dep = 10 ** ((lgMh - 10.8) * 0.333) * ((1 + z) / 10) ** 0.5
+    Mz_dep = 10 ** ((lgMh - 10.8) * 0.3333) * ((1 + z) / 10) ** 0.5
     f_omega = 0.22 * eta**-0.5 * eps**-1 * Mz_dep
     return f_omega.clip(0, 1)
 
@@ -949,13 +978,41 @@ def ffb_metal(lgMh, z, Zsn=1, Zin=0.1):
 
 # FFB dust attenuation
 # -----------------------------
-def AUV_tau(tau):
+def AUV_to_tau(tau):
     "convert tau to AUV"
     return 2.5 * tau / log(10)
 
 
+def fobsc_to_AUV(fobsc):
+    return -2.5 * np.log10(1 - fobsc)
+
+
+def AUV_to_fobsc(AUV):
+    return 1 - 10 ** (AUV / -2.5)
+
+
 def ffb_f_sfe(sfe):
     return (5 * sfe * (1 - 0.8 * sfe)) ** 0.5
+
+
+def ffb_tau(lgMh, z, mode="shell"):
+    eps = func_SFE_instant(lgMh, z)
+    eta = 5 / eps - 4
+    SFR = func_sfr_avg(lgMh, z)
+    R = ffb_radius(lgMh, z, mode=mode, lambdas=0.025)
+    f_dsn = 6.5
+    if mode == "shell":
+        fac = -log(0.5 * (exp(-3.08 - 0.52) + exp(-0.52)))  # 0.5(>0, >R)
+    elif mode == "disc":
+        fac = 0.52  # (>R)
+    tau = fac * 1e-3 * f_dsn * eta**0.5 / R * SFR
+    return tau
+
+
+def ffb_AUV(lgMh, z, mode="shell"):
+    tau = ffb_tau(lgMh, z, mode=mode)
+    AUV = AUV_to_tau(tau)
+    return AUV
 
 
 def ffb_tau_shell(sfe, lgMh, z):
@@ -983,14 +1040,14 @@ def ffb_tau_disc(sfe, lgMh, z):
 def ffb_AUV_shell(lgMh, z):
     sfe = func_SFE_instant(lgMh, z)
     tau = ffb_tau_shell(sfe, lgMh, z)
-    AUV = AUV_tau(tau)
+    AUV = AUV_to_tau(tau)
     return AUV
 
 
 def ffb_AUV_disc(lgMh, z):
     sfe = func_SFE_instant(lgMh, z)
     tau = ffb_tau_disc(sfe, lgMh, z)
-    AUV = AUV_tau(tau)
+    AUV = AUV_to_tau(tau)
     return AUV
 
 
