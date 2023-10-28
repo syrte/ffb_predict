@@ -533,11 +533,17 @@ def p_MUV_lgMh(MUV, lgMh, z, attenuation=False):
         MUV_med_um = MUV_med + AUV_um
 
         if attenuation == "shell":
-            AUV_ffb = ffb_AUV_shell(lgMh, z)
+            # AUV_ffb = ffb_AUV_shell(lgMh, z)
+            AUV_ffb = ffb_AUV(lgMh, z, mode="shell", Zin=0.1, eps=None)
         elif attenuation == "disc":
-            AUV_ffb = ffb_AUV_disc(lgMh, z)
+            # AUV_ffb = ffb_AUV_disc(lgMh, z)
+            AUV_ffb = ffb_AUV(lgMh, z, mode="disc", Zin=0.1, eps=None)
         elif attenuation == "average":
-            AUV_ffb = (ffb_AUV_disc(lgMh, z) + ffb_AUV_shell(lgMh, z)) * 0.5
+            # AUV_ffb = (ffb_AUV_disc(lgMh, z) + ffb_AUV_shell(lgMh, z)) * 0.5
+            AUV_ffb = (
+                ffb_AUV(lgMh, z, mode="shell", Zin=0.1, eps=None)
+                + ffb_AUV(lgMh, z, mode="disc", Zin=0.1, eps=None)
+            ) * 0.5
         MUV_med_ffb = MUV_med + AUV_ffb
 
         prob = f_ffb * normal(MUV, MUV_med_ffb, MUV_sig) + (1 - f_ffb) * normal(
@@ -1031,8 +1037,8 @@ def ffb_AUV(lgMh, z, mode="shell", Zin=0, eps=None):
     return AUV
 
 
-def ffb_fobsc(lgMh, z, mode="shell"):
-    tau = ffb_tau(lgMh, z, mode=mode)
+def ffb_fobsc(lgMh, z, mode="shell", Zin=0, eps=None):
+    tau = ffb_tau(lgMh, z, mode=mode, Zin=Zin, eps=eps)
     return 1 - np.exp(-tau)
 
 
