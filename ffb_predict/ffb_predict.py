@@ -510,11 +510,12 @@ def func_SFE_instant(lgMh, z):
     return SFR / Mdot_baryon
 
 
-def p_MUV_lgMh(MUV, lgMh, z, attenuation=False):
+def p_MUV_lgMh(MUV, lgMh, z, attenuation=None):
     """
-    attenuation: False, 'shell', 'disc', 'average'
+    attenuation: None, 'shell', 'disc', 'average'
     """
-    assert attenuation in [False, "shell", "disc", "average"]
+    assert attenuation in [None, False, "shell", "disc", "average"]
+    # False or None to disable
 
     lgMs_med = func_lgMs_med(lgMh, z)
     lgMs_sig = um_lgMs_sig(lgMh, z)
@@ -533,13 +534,10 @@ def p_MUV_lgMh(MUV, lgMh, z, attenuation=False):
         MUV_med_um = MUV_med + AUV_um
 
         if attenuation == "shell":
-            # AUV_ffb = ffb_AUV_shell(lgMh, z)
             AUV_ffb = ffb_AUV(lgMh, z, mode="shell", Zin=0.1, eps=None)
         elif attenuation == "disc":
-            # AUV_ffb = ffb_AUV_disc(lgMh, z)
             AUV_ffb = ffb_AUV(lgMh, z, mode="disc", Zin=0.1, eps=None)
         elif attenuation == "average":
-            # AUV_ffb = (ffb_AUV_disc(lgMh, z) + ffb_AUV_shell(lgMh, z)) * 0.5
             AUV_ffb = (
                 ffb_AUV(lgMh, z, mode="shell", Zin=0.1, eps=None)
                 + ffb_AUV(lgMh, z, mode="disc", Zin=0.1, eps=None)
@@ -556,114 +554,197 @@ def p_MUV_lgMh(MUV, lgMh, z, attenuation=False):
 
 # Halo mass func and number densities
 # -----------------------------
-def func_dN_dlgMsub_cond(lgMsub, lgMh):
-    "unevolved subhalo mass funct, Han+ 2017, HBT+, table 1 and eq 4"
-    a1, alpha1, a2, alpha2, b, beta = 0.11, 0.95, 0.32, 0.08, 8.9, 1.9
-    mu = 10 ** (lgMsub - lgMh)
-    dndlgmu = (a1 * mu**-alpha1 + a2 * mu**-alpha2) * exp(-b * mu**beta) * log(10)
-    return dndlgmu
-
-
-class HaloMassFunc:
-    def __init__(self, z, compute_sub=False):
-        nu_max = 10  # maximum peak height, lgM_max=16.7 at z=0, 11.6 at z=18
+def compute_dNdlgMh(z, lgMh=None, return_func=False):
+    "halo mass func"
+    if lgMh is None:
+        # nu_max = 10  # maximum peak height, lgM_max=16.7 at z=0, 11.6 at z=18
         nu_max = 8  # maximum peak height, lgM_max=16.5 at z=0, 10.8 at z=18
-        self.lgMh_max = log10(
-            peaks.massFromPeakHeight(nu=nu_max, z=z, **ps_ext_args) / cosmo.h
-        )
-        self.z = z
+        Mh_max = peaks.massFromPeakHeight(nu=nu_max, z=z, **ps_ext_args) / cosmo.h
+        lgMh = np.arange(5, log10(Mh_max) + 0.001, 0.025)
 
-        # central MF
-        lgMcen = np.arange(5, self.lgMh_max + 0.001, 0.025)
-        dNdlgMcen = (
-            mass_function.massFunction(
-                10**lgMcen * cosmo.h,
-                z=z,
-                mdef="vir",
-                model="Watson13".lower(),
-                q_out="dndlnM",
-                **ps_ext_args,
-            )
-            * cosmo.h**3
-            * log(10)
-        )  # comoving Mpc^-3
-        self.func_lgdNdlgM_cen = Akima1DInterpolator(lgMcen, log10(dNdlgMcen))
-        self.lgMcen, self.dNdlgMcen = lgMcen, dNdlgMcen
+    dNdlnMh = mass_function.massFunction(
+        10**lgMh * cosmo.h,
+        z=z,
+        mdef="vir",
+        model="Watson13".lower(),
+        q_out="dndlnM",
+        **ps_ext_args,
+    )  # dndlnM, comoving (Mpc/h)^-3
+    dNdlgMh = dNdlnMh * cosmo.h**3 * log(10)  # comoving Mpc^-3
 
-        # not used
-        if compute_sub:
-            # prepare grids
-            x0, w0 = roots_legendre(80)
-            x0, w0 = x0 * 0.5 + 0.5, w0 * 0.5
+    if not return_func:
+        return lgMh, dNdlgMh
+    else:
+        func_lgdNdlgMh = Akima1DInterpolator(lgMh, log10(dNdlgMh))
+        return func_lgdNdlgMh
 
-            # sub MF
-            lgMsub = lgMcen
-            lgMcen_ = lgMsub + (self.lgMh_max - lgMsub) * x0.reshape(-1, 1)
-            dNdlgMsub_cond = func_dN_dlgMsub_cond(lgMsub, lgMcen_)
-            dNdlgMcen_ = 10 ** self.func_lgdNdlgM_cen(lgMcen_)
-            dNdlgMsub = (dNdlgMsub_cond * dNdlgMcen_ * w0.reshape(-1, 1)).sum(0)
-            self.func_lgdNdlgM_sub = Akima1DInterpolator(lgMsub, log10(dNdlgMsub))
 
-        self.compute_dNdlgSFR()
-        self.compute_dNdMUV_SFR()
+def compute_dNdlgMs(z, lgMs=None, return_func=False):
+    "stellar mass func"
+    lgMh, dNdlgMh = compute_dNdlgMh(z)
+    if lgMs is None:
+        lgMs = np.arange(5, lgMh[-1] - log10(fb) + 0.001, 0.025)
 
-        self.compute_dNdlgMs()
-        self.compute_dNdMUV_Ms()
-        self.compute_dNdMUV_Ms_new()
+    pr_lgMs_lgMh = p_lgMs_lgMh(lgMs.reshape(-1, 1), lgMh, z)
+    dNdlgMs = simps1d(pr_lgMs_lgMh * dNdlgMh, dx=lgMh[1] - lgMh[0])
 
-    def compute_dNdlgSFR(self):
+    if not return_func:
+        return lgMs, dNdlgMs
+    else:
+        func_lgdNdlgMs = Akima1DInterpolator(lgMs, log10(dNdlgMs))
+        return func_lgdNdlgMs
+
+
+def compute_N_lgMs(z, lgMs):
+    "Cumulative number of galaxies N(>lgMs | z)"
+    lgMs_, dNdlgMs_ = compute_dNdlgMs(z)
+    f_N_lgMs = Akima1DInterpolator(-lgMs_[::-1], dNdlgMs_[::-1]).antiderivative()
+    N_lgMs = f_N_lgMs(-lgMs)
+    return N_lgMs
+
+
+def compute_rho_star(z, MUV_lim):
+    "rho_star(MUV<MUV_lim | z)"
+    lgMs, dNdlgMs = compute_dNdlgMs(z)
+    F_dMs_dlgMs = Akima1DInterpolator(
+        -lgMs[::-1], (10**lgMs * dNdlgMs)[::-1]
+    ).antiderivative()
+
+    MUV = func_MUV_lgMs(lgMs, z=z)
+    lgMs_lim = np.interp(MUV_lim, MUV[::-1], lgMs[::-1])
+
+    rho_star = F_dMs_dlgMs(-lgMs_lim)
+    return rho_star
+
+
+def compute_dNdlgSFR(z, lgSFR=None, return_func=False):
+    lgMh, dNdlgMh = compute_dNdlgMh(z)
+    if lgSFR is None:
         lgSFR = np.linspace(-6, 6, 121)
-        lgMh, dNdlgMh = self.lgMcen, self.dNdlgMcen
-        pr_lgSFR_lgMh = p_lgSFR_lgMh(lgSFR.reshape(-1, 1), lgMh, self.z)
-        dNdlgSFR = simps1d(pr_lgSFR_lgMh * dNdlgMh, dx=lgMh[1] - lgMh[0])
-        self.func_lgdNdlgSFR = Akima1DInterpolator(lgSFR, log10(dNdlgSFR))
-        self.lgSFR, self.dNdlgSFR = lgSFR, dNdlgSFR
 
-    def compute_dNdMUV_SFR(self):
-        MUV = func_MUV_sfr(10**self.lgSFR, z=self.z)
-        dNdMUV = self.dNdlgSFR / 2.5
-        self.func_lgdNdMUV_SFR = Akima1DInterpolator(MUV[::-1], log10(dNdMUV)[::-1])
-        self.MUV_SFR, self.dNdMUV_SFR = MUV, dNdMUV
+    pr_lgSFR_lgMh = p_lgSFR_lgMh(lgSFR.reshape(-1, 1), lgMh, z)
+    dNdlgSFR = simps1d(pr_lgSFR_lgMh * dNdlgMh, dx=lgMh[1] - lgMh[0])
 
-        # dust extinction
-        AUV, dAUV_dMUV = um_AUV(MUV, z=self.z, derivative=True)
-        self.MUV_SFR_obs = MUV + AUV
-        self.dNdMUV_SFR_obs = dNdMUV / np.abs(1 + dAUV_dMUV)
-        self.func_lgdNdMUV_SFR_obs = Akima1DInterpolator(
-            self.MUV_SFR_obs[::-1], log10(self.dNdMUV_SFR_obs)[::-1]
-        )
+    if not return_func:
+        return lgSFR, dNdlgSFR
+    else:
+        func_lgdNdlgSFR = Akima1DInterpolator(lgSFR, log10(dNdlgSFR))
+        return func_lgdNdlgSFR
 
-    def compute_dNdlgMs(self):
-        lgMh, dNdlgMh = self.lgMcen, self.dNdlgMcen
-        lgMs = np.arange(5, self.lgMh_max - 1 + 0.001, 0.025)
-        pr_lgMs_lgMh = p_lgMs_lgMh(lgMs.reshape(-1, 1), lgMh, self.z)
-        dNdlgMs = simps1d(pr_lgMs_lgMh * dNdlgMh, dx=lgMh[1] - lgMh[0])
-        self.func_lgdNdlgMs = Akima1DInterpolator(lgMs, log10(dNdlgMs))
-        self.lgMs, self.dNdlgMs = lgMs, dNdlgMs
 
-    def compute_dNdMUV_Ms(self):
-        MUV = func_MUV_lgMs(self.lgMs, z=self.z)
-        dNdMUV = self.dNdlgMs / 2.3  # XXX
-        self.func_lgdNdMUV_Ms = Akima1DInterpolator(MUV[::-1], log10(dNdMUV)[::-1])
-        self.MUV_Ms, self.dNdMUV_Ms = MUV, dNdMUV
+def compute_rho_SFR(z, MUV_lim):
+    "rho_SFR(MUV<MUV_lim | z)"
+    lgMh, dNdlgMh = compute_dNdlgMh(z)
 
-        # dust extinction
-        AUV, dAUV_dMUV = um_AUV(MUV, z=self.z, derivative=True)
-        self.MUV_Ms_obs = MUV + AUV
-        self.dNdMUV_Ms_obs = dNdMUV / np.abs(1 + dAUV_dMUV)
-        self.func_lgdNdMUV_Ms_obs = Akima1DInterpolator(
-            self.MUV_Ms_obs[::-1], log10(self.dNdMUV_Ms_obs)[::-1]
-        )
+    lgMs = func_lgMs_med(lgMh, z)
+    MUV = func_MUV_lgMs(lgMs, z)
+    lgMh_lim = np.interp(MUV_lim, MUV[::-1], lgMh[::-1])
 
-    def compute_dNdMUV_Ms_new(self, attenuation=False):
-        lgMh, dNdlgMh = self.lgMcen, self.dNdlgMcen
+    lgSFR = np.linspace(-6, 6, 121).reshape(-1, 1)
+    pr_lgSFR_lgMh = p_lgSFR_lgMh(lgSFR, lgMh, z)
+    dSFR_dlgMh = simps1d(
+        10**lgSFR * pr_lgSFR_lgMh * dNdlgMh, axis=0, dx=lgSFR[1] - lgSFR[0]
+    )
+    F_dSFR_dlgMh = Akima1DInterpolator(-lgMh[::-1], dSFR_dlgMh[::-1]).antiderivative()
+
+    rho_SFR = F_dSFR_dlgMh(-lgMh_lim)
+
+    return rho_SFR
+
+
+def compute_dNdMUV_Ms(z, MUV=None, attenuation=None, return_func=False):
+    "UVLF computed using MUV-Ms relation"
+    lgMh, dNdlgMh = compute_dNdlgMh(z)
+    if MUV is None:
         MUV = np.arange(-28, -15 + 0.001, 0.1)
-        pr_MUV_lgMh = p_MUV_lgMh(
-            MUV.reshape(-1, 1), lgMh, self.z, attenuation=attenuation
-        )
-        dNdMUV = simps1d(pr_MUV_lgMh * dNdlgMh, dx=lgMh[1] - lgMh[0])
-        self.func_lgdNdMUV = Akima1DInterpolator(MUV, log10(dNdMUV))
-        self.MUV, self.dNdMUV = MUV, dNdMUV
+
+    pr_MUV_lgMh = p_MUV_lgMh(MUV.reshape(-1, 1), lgMh, z, attenuation=attenuation)
+    dNdMUV = simps1d(pr_MUV_lgMh * dNdlgMh, dx=lgMh[1] - lgMh[0])
+
+    if not return_func:
+        return MUV, dNdMUV
+    else:
+        func_lgdNdMUV = Akima1DInterpolator(MUV, log10(dNdMUV))
+        return func_lgdNdMUV
+
+
+def compute_rho_UV(z, MUV_lim):
+    "rho_UV(MUV<MUV_lim | z) in units of erg/s/Hz/Mpc^3"
+    MUV, dNdMUV = compute_dNdMUV_Ms(z)
+
+    dist_lum = 10 * u.pc
+    flux = (MUV * u.ABmag).to(u.erg / u.s / u.cm**2 / u.Hz)
+    lum = (4 * np.pi * dist_lum**2 * flux).to(u.erg / u.s / u.Hz).value
+    F_dlum_dMUV = Akima1DInterpolator(MUV, lum * dNdMUV).antiderivative()
+
+    rho_UV = F_dlum_dMUV(MUV_lim)
+    return rho_UV
+
+
+def convert_MUV_to_JWST(
+    z,
+    mag,
+    band="NIRCam_F277W",
+    table_path="data/Yung/Conversion_tables",
+    inverse=False,
+):
+    """
+    Tables generated by L.Y. Aaron Yung.
+    Note z can only be integers within [5, 20].
+    """
+    from astropy.io import ascii
+
+    IRconversion = ascii.read(
+        f"{table_path}/UV_to_IR_z{z:d}.dat", names=["Conversion", "slope", "intercept"]
+    )
+    ix = IRconversion["Conversion"] == "UV1500_to_" + band
+    IR_slope = IRconversion[ix]["slope"][0]
+    IR_intercept = IRconversion[ix]["intercept"][0]
+
+    if inverse:
+        JWST_band = mag
+        MUV_1500 = (JWST_band - IR_intercept) / IR_slope
+        return MUV_1500
+    else:
+        MUV_1500 = mag
+        JWST_band = MUV_1500 * IR_slope + IR_intercept
+        return JWST_band
+
+
+def compute_surface_density_obs(
+    mag_lim, band="NIRCam_F277W", area=u.arcsec**2, attenuation=None
+):
+    """
+    N(>z, m<mlin) of bright galaxies within give area in the sky
+
+    Returns
+    -------
+    z, N :
+        Note z can only be integers within [5, 20].
+    """
+    zs = np.arange(6, 21)
+
+    cosmo_astropy = cosmo.toAstropy()
+    vol = cosmo_astropy.comoving_volume(zs).to_value(u.Mpc**3)
+
+    mag_lim = np.atleast_1d(mag_lim)
+    den_gal = np.zeros((len(zs), len(mag_lim)))  # number density at z
+    num_gal = np.zeros((len(zs), len(mag_lim)))  # cumulative number > z
+
+    for i, z in enumerate(zs):
+        MUV, dNdMUV = compute_dNdMUV_Ms(z, attenuation=attenuation)
+        func_den = Akima1DInterpolator(MUV, dNdMUV).antiderivative()
+
+        MUV_lim = convert_MUV_to_JWST(z, mag_lim, JWST_band=band, inverse=True)
+        den_gal[i] = func_den(MUV_lim)
+
+    func_num = Akima1DInterpolator(-vol[::-1], den_gal[::-1]).antiderivative()
+    num_gal = func_num(-vol)
+
+    fac = (area / (4 * pi * u.steradian)).to_value(1)  # sky area
+    surface_den = fac * num_gal
+
+    return zs, surface_den
 
 
 # Halo growth history
@@ -842,88 +923,21 @@ def ffb_rcool(lgMh, z, mode="shell", eps=None):
 # FFB galaxy size
 # -----------------------------
 def ffb_radius(lgMh, z, mode="shell", lambdas=0.025, eps=None):
-    # \sim 2Re
+    """
+    Galaxy radius.
+    Important note: this radius is about 2Re!
+    """
     if mode == "shell":
         if eps is None:
             eps = func_SFE_instant(lgMh, z)
         eta = 5 / eps - 4
-        radius = (
-            0.56
-            * (lambdas / 0.025)
-            * (eta**0.25 * eps**0.5)
-            * 10 ** ((lgMh - 10.8) * (1 / 6))
-            * ((1 + z) / 10) ** -0.75
-        )
+
+        Mz_dep = 10 ** ((lgMh - 10.8) * (1 / 6)) * ((1 + z) / 10) ** -0.75
+        radius = 0.56 * (lambdas / 0.025) * (eta**0.25 * eps**0.5) * Mz_dep
     elif mode == "disc":
-        radius = (
-            0.62 * (lambdas / 0.025) * 10 ** ((lgMh - 10.8) / 3) * ((1 + z) / 10) ** -1
-        )
+        Mz_dep = 10 ** ((lgMh - 10.8) / 3) * ((1 + z) / 10) ** -1
+        radius = 0.62 * (lambdas / 0.025) * Mz_dep
     return radius
-
-
-def ffb_rdisc(lgMh, z):
-    """
-    Mh: Msun
-    z:
-    rdisc: kpc
-    """
-    rdisc = 0.31 * 10 ** ((lgMh - 10.8) / 3) * ((1 + z) / 10) ** -1
-    return rdisc
-
-
-def ffb_rshell2(lgMh, z):
-    """
-    Mh: Msun
-    z:
-    rshell: kpc
-    Note Re is about half of rshell
-    obsolete estimate
-    """
-    rshell = 0.79 * 10 ** ((lgMh - 10.8) * -0.06) * ((1 + z) / 10) ** -2.5
-    return rshell
-
-
-def ffb_rshell(lgMh, z, eps=1):
-    """
-    Mh: Msun
-    z:
-    rshell: kpc
-    Note Re is about half of rshell
-    """
-    eta = 5 / eps - 4
-    rshell = (
-        0.56
-        * eta**0.25
-        * eps**0.5
-        * 10 ** ((lgMh - 10.8) * (1 / 6))
-        * ((1 + z) / 10) ** -0.75
-    )
-    return rshell
-
-
-def ffb_rdisk_Mcrit(z):
-    return 0.29 * ((1 + z) / 10) ** -3.07
-
-
-def ffb_rshell2_Mcrit(z):
-    return 0.79 * ((1 + z) / 10) ** -2.13
-
-
-def ffb_rshell_Mcrit(z, eps=1):
-    eta = 5 / eps - 4
-    return 0.56 * eta**0.25 * eps**0.5 * ((1 + z) / 10) ** -1.78
-
-
-def ffb_lgMcrit_disc(z):
-    "Halo mass threshold for FFB"
-    lgMh_crit = 10.8 + log10(0.8) - 6.2 * log10((1 + z) / 10)  # D23, eq 62
-    return lgMh_crit
-
-
-def ffb_lgMcrit_shell(z):
-    "Halo mass threshold for FFB"
-    lgMh_crit = 10.8 + log10(1) - 6.2 * log10((1 + z) / 10)  # D23, eq 62
-    return lgMh_crit
 
 
 # FFB gas fraction
@@ -932,50 +946,62 @@ def ffb_Mgas(lgMh, z, mode="shell", eps=None):
     if eps is None:
         eps = func_SFE_instant(lgMh, z)
     eta = 5 / eps - 4
+
     R = ffb_radius(lgMh, z, mode=mode, lambdas=0.025, eps=eps)
-    # SFR = func_sfr_avg(lgMh, z)
     SFR = func_Mdot_baryon(lgMh, z) * eps
+    # SFR = func_sfr_avg(lgMh, z) # equivalent
+
     mgas = 1.04e5 * eta**1.5 * SFR * R
     return mgas.clip(0, 10**lgMh)
 
 
 def ffb_fgas(lgMh, z, mode="shell", eps=None):
+    "gas fraction: mgas / (mgas + mstar)"
     mgas = ffb_Mgas(lgMh, z, mode=mode, eps=eps)
-    mstar = 10 ** func_lgMs_med(lgMh, z)
-    # mhalo = 10**lgMh
+    if eps is None:
+        mstar = 10 ** func_lgMs_med(lgMh, z)
+    else:
+        mstar = fb * 10**lgMh * eps
     return mgas / (mgas + mstar)
 
 
-def ffb_gasfrac_shell(lgMh, z, eps=1):
+# The four functions below are approximations, which are not used in practice
+def ffb_ratio_Mgas_star_shell(lgMh, z, eps=1):
+    "approximate gas ratio"
     eta = 5 / eps - 4
     Mz_dep = 10 ** ((lgMh - 10.8) * 0.31) * ((1 + z) / 10) ** 1.75
     return 0.61e-2 * (eta / 6) ** 1.75 * (eps / 0.5) ** 0.5 * Mz_dep
 
 
-def ffb_gasfrac_disk(lgMh, z, eps=1):
+def ffb_ratio_Mgas_star_disk(lgMh, z, eps=1):
+    "approximate gas ratio"
     eta = 5 / eps - 4
     Mz_dep = 10 ** ((lgMh - 10.8) * 0.47) * ((1 + z) / 10) ** 1.5
     return 0.61e-2 * (eta / 6) ** 1.5 * Mz_dep
 
 
-def ffb_gasfrac_shell_Mcrit(lgMh, z, eps=1):
+def ffb_ratio_Mgas_star_shell_Mcrit(z, eps=1):
+    "approximate gas ratio"
     eta = 5 / eps - 4
-    Mz_dep = ((1 + z) / 10) ** -0.17
+    Mz_dep = ((1 + z) / 10) ** -0.15
     return 0.61e-2 * (eta / 6) ** 1.75 * (eps / 0.5) ** 0.5 * Mz_dep
 
 
-def ffb_gasfrac_disk_Mcrit(lgMh, z, eps=1):
+def ffb_ratio_Mgas_star_disk_Mcrit(z, eps=1):
+    "approximate gas ratio"
     eta = 5 / eps - 4
-    Mz_dep = ((1 + z) / 10) ** -1.4
-    return 0.55e-2 * (eta / 6) ** 1.5 * Mz_dep
+    Mz_dep = ((1 + z) / 10) ** -1.43
+    return 0.61e-2 * (eta / 6) ** 1.5 * Mz_dep
 
 
 # FFB metallicity
 # -----------------------------
 def ffb_str_coverage(lgMh, z, eps=None):
+    "Sky coverage fraction by streams"
     if eps is None:
         eps = func_SFE_instant(lgMh, z)
     eta = 5 / eps - 4
+
     Mz_dep = 10 ** ((lgMh - 10.8) * 0.3333) * ((1 + z) / 10) ** 0.5
     f_omega = 0.22 * eta**-0.5 * eps**-1 * Mz_dep
     return f_omega.clip(0, 1)
@@ -985,6 +1011,7 @@ def ffb_metal(lgMh, z, Zsn=1, Zin=0.1, eps=None):
     if eps is None:
         eps = func_SFE_instant(lgMh, z)
     f_omega = ffb_str_coverage(lgMh, z, eps=eps)
+
     Zmix = Zin + 0.2 * eps * f_omega / (1 + (1 - 0.8 * eps) * f_omega) * (Zsn - Zin)
     return Zmix
 
@@ -1012,9 +1039,10 @@ def ffb_tau(lgMh, z, mode="shell", Zin=0, eps=None):
     if eps is None:
         eps = func_SFE_instant(lgMh, z)
     eta = 5 / eps - 4
-    # SFR = func_sfr_avg(lgMh, z)
-    SFR = func_Mdot_baryon(lgMh, z) * eps
+
     R = ffb_radius(lgMh, z, mode=mode, lambdas=0.025, eps=eps)
+    SFR = func_Mdot_baryon(lgMh, z) * eps
+    # SFR = func_sfr_avg(lgMh, z) # equivalent
 
     f_dsn = 6.5
     if Zin == 0:
@@ -1023,7 +1051,9 @@ def ffb_tau(lgMh, z, mode="shell", Zin=0, eps=None):
         f_d = f_dsn + 5 * (1 / eps - 1) * Zin**1.6
 
     if mode == "shell":
-        fac = -log(0.5 * (exp(-3.08 - 0.52) + exp(-0.52)))  # 0.5(>0, >R)
+        neg_log_meanexp = lambda x, y: -log(0.5 * (exp(-x) + exp(-y)))
+        fac = neg_log_meanexp(3.08 + 0.52, 0.52)  # 0.5(>0, >R)
+        # fac = -log(0.5 * (exp(-3.08 - 0.52) + exp(-0.52)))
     elif mode == "disc":
         fac = 0.52  # (>R)
 
@@ -1042,25 +1072,21 @@ def ffb_fobsc(lgMh, z, mode="shell", Zin=0, eps=None):
     return 1 - np.exp(-tau)
 
 
+# The four functions below are approximations, which are not used in practice
 def ffb_tau_shell(sfe, lgMh, z):
     "UV optical depth for shell scenario, Li+23, eq 29"
     # for the shell the average of r>0 and r>R
-    # tau = (2.32 + 0.39) * ffb_f_sfe(sfe) * 10**(1.2 * (lgMh - 10.8)) * ((1 + z) / 10)**5
-    tau = (
-        # (-log(0.5 * (exp(-1.65 - 0.27) + exp(-0.27))))
-        (-log(0.5 * (exp(-2.32 - 0.39) + exp(-0.39))))
-        * ffb_f_sfe(sfe)
-        * 10 ** (1.2 * (lgMh - 10.8))
-        * ((1 + z) / 10) ** 5
-    )
+    Mz_dep = 10 ** (0.97 * (lgMh - 10.8)) * ((1 + z) / 10) ** 3.25
+    neg_log_meanexp = lambda x, y: -log(0.5 * (exp(-x) + exp(-y)))
+    tau = neg_log_meanexp(2.32 + 0.39, 0.39) * ffb_f_sfe(sfe) ** 0.5 * Mz_dep
     return tau
 
 
 def ffb_tau_disc(sfe, lgMh, z):
     "UV optical depth for disc scenario, Li+23, eq 29"
     # for the disc only r>R
-    # tau = (2.10 + 0.35) * ffb_f_sfe(sfe) * 10**(0.81 * (lgMh - 10.8)) * ((1 + z) / 10)**3.5
-    tau = (0.35) * ffb_f_sfe(sfe) * 10 ** (0.81 * (lgMh - 10.8)) * ((1 + z) / 10) ** 3.5
+    Mz_dep = 10 ** (0.81 * (lgMh - 10.8)) * ((1 + z) / 10) ** 3.5
+    tau = (0.36) * ffb_f_sfe(sfe) * Mz_dep
     return tau
 
 
@@ -1207,3 +1233,187 @@ def amap(func, *args):
         return res[0]
     else:
         return res.reshape(shape)
+
+
+# obsolete
+# -----------------------------
+def _func_dN_dlgMsub_cond(lgMsub, lgMh):
+    "unevolved subhalo mass funct, Han+ 2017, HBT+, table 1 and eq 4"
+    a1, alpha1, a2, alpha2, b, beta = 0.11, 0.95, 0.32, 0.08, 8.9, 1.9
+    mu = 10 ** (lgMsub - lgMh)
+    dndlgmu = (a1 * mu**-alpha1 + a2 * mu**-alpha2) * exp(-b * mu**beta) * log(10)
+    return dndlgmu
+
+
+class _HaloMassFunc:
+    def __init__(self, z, compute_sub=False):
+        nu_max = 10  # maximum peak height, lgM_max=16.7 at z=0, 11.6 at z=18
+        nu_max = 8  # maximum peak height, lgM_max=16.5 at z=0, 10.8 at z=18
+        self.lgMh_max = log10(
+            peaks.massFromPeakHeight(nu=nu_max, z=z, **ps_ext_args) / cosmo.h
+        )
+        self.z = z
+
+        # central MF
+        lgMcen = np.arange(5, self.lgMh_max + 0.001, 0.025)
+        dNdlgMcen = (
+            mass_function.massFunction(
+                10**lgMcen * cosmo.h,
+                z=z,
+                mdef="vir",
+                model="Watson13".lower(),
+                q_out="dndlnM",
+                **ps_ext_args,
+            )
+            * cosmo.h**3
+            * log(10)
+        )  # comoving Mpc^-3
+        self.func_lgdNdlgM_cen = Akima1DInterpolator(lgMcen, log10(dNdlgMcen))
+        self.lgMcen, self.dNdlgMcen = lgMcen, dNdlgMcen
+
+        # not used
+        if compute_sub:
+            # prepare grids
+            x0, w0 = roots_legendre(80)
+            x0, w0 = x0 * 0.5 + 0.5, w0 * 0.5
+
+            # sub MF
+            lgMsub = lgMcen
+            lgMcen_ = lgMsub + (self.lgMh_max - lgMsub) * x0.reshape(-1, 1)
+            dNdlgMsub_cond = _func_dN_dlgMsub_cond(lgMsub, lgMcen_)
+            dNdlgMcen_ = 10 ** self.func_lgdNdlgM_cen(lgMcen_)
+            dNdlgMsub = (dNdlgMsub_cond * dNdlgMcen_ * w0.reshape(-1, 1)).sum(0)
+            self.func_lgdNdlgM_sub = Akima1DInterpolator(lgMsub, log10(dNdlgMsub))
+
+    def compute_dNdlgSFR(self, lgSFR=None):
+        if lgSFR is None:
+            lgSFR = np.linspace(-6, 6, 121)
+        lgMh, dNdlgMh = self.lgMcen, self.dNdlgMcen
+        pr_lgSFR_lgMh = p_lgSFR_lgMh(lgSFR.reshape(-1, 1), lgMh, self.z)
+        dNdlgSFR = simps1d(pr_lgSFR_lgMh * dNdlgMh, dx=lgMh[1] - lgMh[0])
+        # self.func_lgdNdlgSFR = Akima1DInterpolator(lgSFR, log10(dNdlgSFR))
+        # self.lgSFR, self.dNdlgSFR = lgSFR, dNdlgSFR
+        return lgSFR, dNdlgSFR
+
+    def compute_dNdlgMs(self, lgMs=None):
+        lgMh, dNdlgMh = self.lgMcen, self.dNdlgMcen
+        if lgMs is None:
+            lgMs = np.arange(5, self.lgMh_max - log10(fb) + 0.001, 0.025)
+        pr_lgMs_lgMh = p_lgMs_lgMh(lgMs.reshape(-1, 1), lgMh, self.z)
+        dNdlgMs = simps1d(pr_lgMs_lgMh * dNdlgMh, dx=lgMh[1] - lgMh[0])
+        # self.func_lgdNdlgMs = Akima1DInterpolator(lgMs, log10(dNdlgMs))
+        # self.lgMs, self.dNdlgMs = lgMs, dNdlgMs
+        return lgMs, dNdlgMs
+
+    def compute_dNdMUV_Ms(self, MUV=None, attenuation=None):
+        lgMh, dNdlgMh = self.lgMcen, self.dNdlgMcen
+        if MUV is None:
+            MUV = np.arange(-28, -15 + 0.001, 0.1)
+        pr_MUV_lgMh = p_MUV_lgMh(
+            MUV.reshape(-1, 1), lgMh, self.z, attenuation=attenuation
+        )
+        dNdMUV = simps1d(pr_MUV_lgMh * dNdlgMh, dx=lgMh[1] - lgMh[0])
+        # self.func_lgdNdMUV = Akima1DInterpolator(MUV, log10(dNdMUV))
+        # self.MUV, self.dNdMUV = MUV, dNdMUV
+        return MUV, dNdMUV
+
+    def compute_N_lgMs(self, lgMs):
+        lgMs_, dNdlgMs_ = self.compute_dNdlgMs()
+        f_N_lgMs = Akima1DInterpolator(-lgMs_[::-1], dNdlgMs_[::-1]).antiderivative()
+        N_lgMs = f_N_lgMs(-lgMs)
+        return N_lgMs
+
+    def compute_dNdMUV_SFR_old(self):
+        # obsolete
+        MUV = func_MUV_sfr(10**self.lgSFR, z=self.z)
+        dNdMUV = self.dNdlgSFR / 2.5
+        self.func_lgdNdMUV_SFR = Akima1DInterpolator(MUV[::-1], log10(dNdMUV)[::-1])
+        self.MUV_SFR, self.dNdMUV_SFR = MUV, dNdMUV
+
+        # dust extinction
+        AUV, dAUV_dMUV = um_AUV(MUV, z=self.z, derivative=True)
+        self.MUV_SFR_obs = MUV + AUV
+        self.dNdMUV_SFR_obs = dNdMUV / np.abs(1 + dAUV_dMUV)
+        self.func_lgdNdMUV_SFR_obs = Akima1DInterpolator(
+            self.MUV_SFR_obs[::-1], log10(self.dNdMUV_SFR_obs)[::-1]
+        )
+
+    def compute_dNdMUV_Ms_old(self):
+        # obsolete
+        MUV = func_MUV_lgMs(self.lgMs, z=self.z)
+        dNdMUV = self.dNdlgMs / 2.3  # XXX
+        self.func_lgdNdMUV_Ms = Akima1DInterpolator(MUV[::-1], log10(dNdMUV)[::-1])
+        self.MUV_Ms, self.dNdMUV_Ms = MUV, dNdMUV
+
+        # dust extinction
+        AUV, dAUV_dMUV = um_AUV(MUV, z=self.z, derivative=True)
+        self.MUV_Ms_obs = MUV + AUV
+        self.dNdMUV_Ms_obs = dNdMUV / np.abs(1 + dAUV_dMUV)
+        self.func_lgdNdMUV_Ms_obs = Akima1DInterpolator(
+            self.MUV_Ms_obs[::-1], log10(self.dNdMUV_Ms_obs)[::-1]
+        )
+
+
+def _ffb_rdisc(lgMh, z):
+    """
+    Mh: Msun
+    z:
+    rdisc: kpc
+    """
+    rdisc = 0.31 * 10 ** ((lgMh - 10.8) / 3) * ((1 + z) / 10) ** -1
+    return rdisc
+
+
+def _ffb_rshell2(lgMh, z):
+    """
+    Mh: Msun
+    z:
+    rshell: kpc
+    Note Re is about half of rshell
+    obsolete estimate
+    """
+    rshell = 0.79 * 10 ** ((lgMh - 10.8) * -0.06) * ((1 + z) / 10) ** -2.5
+    return rshell
+
+
+def _ffb_rshell(lgMh, z, eps=1):
+    """
+    Mh: Msun
+    z:
+    rshell: kpc
+    Note Re is about half of rshell
+    """
+    eta = 5 / eps - 4
+    rshell = (
+        0.56
+        * eta**0.25
+        * eps**0.5
+        * 10 ** ((lgMh - 10.8) * (1 / 6))
+        * ((1 + z) / 10) ** -0.75
+    )
+    return rshell
+
+
+def _ffb_rdisk_Mcrit(z):
+    return 0.29 * ((1 + z) / 10) ** -3.07
+
+
+def _ffb_rshell2_Mcrit(z):
+    return 0.79 * ((1 + z) / 10) ** -2.13
+
+
+def _ffb_rshell_Mcrit(z, eps=1):
+    eta = 5 / eps - 4
+    return 0.56 * eta**0.25 * eps**0.5 * ((1 + z) / 10) ** -1.78
+
+
+def _ffb_lgMcrit_disc(z):
+    "Halo mass threshold for FFB"
+    lgMh_crit = 10.8 + log10(0.8) - 6.2 * log10((1 + z) / 10)  # D23, eq 62
+    return lgMh_crit
+
+
+def _ffb_lgMcrit_shell(z):
+    "Halo mass threshold for FFB"
+    lgMh_crit = 10.8 + log10(1) - 6.2 * log10((1 + z) / 10)  # D23, eq 62
+    return lgMh_crit
