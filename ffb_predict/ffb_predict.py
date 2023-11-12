@@ -49,8 +49,7 @@ default_options = dict(
 options = dict()
 
 
-def _set_option(**opts):
-    "users should use set_option instead of this function"
+def set_option(**opts):
     for key, val in opts.items():
         if key in default_options:
             options[key] = val
@@ -59,7 +58,7 @@ def _set_option(**opts):
     return options
 
 
-_set_option(**default_options)
+set_option(**default_options)
 
 
 def get_option():
@@ -67,13 +66,14 @@ def get_option():
 
 
 @contextmanager
-def set_option(**opts):
+def with_option(**opts):
+    "change the options temporarily, restore to earlier values when exit the context"
     current_options = get_option()
     try:
-        _set_option(**opts)
+        set_option(**opts)
         yield
     finally:
-        _set_option(**current_options)
+        set_option(**current_options)
 
 
 # math functions
@@ -262,10 +262,9 @@ def um_lgMs_sig(lgMh, z):
     ylim(0, 0.5)
     """
     # sig = sigmoid(lgMh, 12.5, s=1, a=0.3, b=0.2)  # B19, fig 12
-    sig = sigmoid(lgMh, 13.9 - z * 0.3, s=0.2, a=0.4, b=0.1)  # according to Han
-    sig = sigmoid(
-        lgMh, 13.9 - z * 0.3, s=0.2, a=0.4, b=0.3
-    )  # added scatter due to scatter in MUV(Ms)
+    # sig = sigmoid(lgMh, 13.9 - z * 0.3, s=0.2, a=0.4, b=0.1)  # according to Han
+    sig = sigmoid(lgMh, 13.9 - z * 0.3, s=0.2, a=0.4, b=0.3)
+    # added scatter due to scatter in MUV(Ms)
     return sig  # dex
 
 
@@ -320,7 +319,7 @@ def ffb_lgMh_crit(z):
 
 def ffb_sfr_med(lgMh, z):
     sfr_avg = func_Mdot_baryon(lgMh, z=z) * options["FFB_SFE_MAX"]  # keep sfr_avg fixed
-    fac_avg_med = exp(0.5 * (options["ffb_sfr_sig"](lgMh, z=z) * log(10)) ** 2)
+    fac_avg_med = exp(0.5 * (ffb_sfr_sig(lgMh, z=z) * log(10)) ** 2)
     sfr_med = sfr_avg / fac_avg_med  # convert avg to median
     return sfr_med  # Msun/yr
 
@@ -894,24 +893,16 @@ def mah_interp_Dekel13(z_ob, lgM_ob, z_hist):
     else:
         beta, lgM_c0 = options["DEKEL13_BETA"], abs(options["DEKEL13_PIVOT"])
         if options["DEKEL13_PIVOT"] > 0:
-            lgM_hist = (
-                lgM_c0
-                - log10(
-                    10 ** (-beta * (lgM_ob_T - lgM_c0)) + alpha * beta * (z_hist - z_ob)
-                )
-                / beta
-            )
+            base = 10 ** (-beta * (lgM_ob_T - lgM_c0)) + alpha * beta * (z_hist - z_ob)
+            lgM_hist = lgM_c0 - log10(base) / beta
         else:
-            # negative for varying pivot
-            lgM_hist = (
-                lgM_c0
-                - log10(
-                    10 ** (-beta * (lgM_ob_T - lgM_c0))
-                    + exp(alpha * beta * (z_hist - z_ob))
-                    - 1
-                )
-                / beta
+            # negative for varying pivot, for my own test only
+            base = (
+                10 ** (-beta * (lgM_ob_T - lgM_c0))
+                + exp(alpha * beta * (z_hist - z_ob))
+                - 1
             )
+            lgM_hist = lgM_c0 - log10(base) / beta
 
     if np.isscalar(z_hist):
         return lgM_hist.reshape(np.shape(lgM_ob))
@@ -1271,7 +1262,7 @@ def amap(func, *args):
         return res.reshape(shape)
 
 
-# obsolete
+# obsolete functions
 # -----------------------------
 def _func_dN_dlgMsub_cond(lgMsub, lgMh):
     "unevolved subhalo mass funct, Han+ 2017, HBT+, table 1 and eq 4"
