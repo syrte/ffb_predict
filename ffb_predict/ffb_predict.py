@@ -3,6 +3,8 @@ Prediction with FFB model for JWST
 
 author: Zhaozhou Li (lizz.astro@gmail.com)
 """
+from contextlib import contextmanager
+
 import numpy as np
 from numpy import pi, log10, log, exp
 from scipy.interpolate import Akima1DInterpolator
@@ -31,17 +33,47 @@ ps_ext_args = dict(
 
 # global variables
 # -----------------------------
-UM_SHMR_MINSLOP = 0.3  # manual fix with minimum slop of dlnM*/dlnMh, None for disable
-FFB_SFR_SIG = 0.3  # dex
-FFB_SFR_TH_SIG = 0.15  # dex, transition width, equiv to ~0.6 dex full transition region
-FFB_LGMH_PIVOT = 10.8  # Msun
-FFB_LGMH_QUENCH = None  # Msun, can be None to disable
-FFB_SFE_MAX = 1  # maximum star formation efficiency for FFB galaxies
-FFB_FRAC_ALL = False  # if true, f_ffb is defined wrt all gals, otherwise wrt SF gals.
-HALO_MAH_MODEL = "Dekel13"  # Model for halo growth history, Dekel13 or Zhao09
-DEKEL13_BETA = 0.14  # beta=0.14 in Dekel+13 eq. 7
-DEKEL13_PIVOT = 12  # pivot mass
-UV_FACTOR = 1  # not used
+default_options = dict(
+    UM_SHMR_MINSLOP=0.3,  # manual fix with minimum slop of dlnM*/dlnMh, None for disable
+    FFB_SFR_SIG=0.3,  # dex
+    FFB_SFR_TH_SIG=0.15,  # dex, transition width, equiv to ~0.6 dex full transition region
+    FFB_LGMH_PIVOT=10.8,  # Msun
+    FFB_LGMH_QUENCH=None,  # Msun, can be None to disable
+    FFB_SFE_MAX=1,  # maximum star formation efficiency for FFB galaxies
+    FFB_FRAC_ALL=False,  # if true, f_ffb is defined wrt all gals, otherwise wrt SF gals.
+    HALO_MAH_MODEL="Dekel13",  # Model for halo growth history, Dekel13 or Zhao09
+    DEKEL13_BETA=0.14,  # beta=0.14 in Dekel+13 eq. 7
+    DEKEL13_PIVOT=12,  # pivot mass
+    UV_FACTOR=1,  # not used
+)
+options = dict()
+
+
+def _set_option(**opts):
+    "users should use set_option instead of this function"
+    for key, val in opts.items():
+        if key in default_options:
+            options[key] = val
+        else:
+            raise ValueError(f"{key} is not valid option.")
+    return options
+
+
+_set_option(**default_options)
+
+
+def get_option():
+    return options.copy()
+
+
+@contextmanager
+def set_option(**opts):
+    current_options = get_option()
+    try:
+        _set_option(**opts)
+        yield
+    finally:
+        _set_option(**current_options)
 
 
 # math functions
@@ -209,8 +241,8 @@ def um_lgMs_med_basic(lgMh, z, model="obs"):
     delta = DELTA_0
     gamma = 10 ** (GAMMA_0 + a1 * GAMMA_A + z * GAMMA_Z)
 
-    if UM_SHMR_MINSLOP is not None:
-        beta = np.fmax(beta, UM_SHMR_MINSLOP)  # slope for high mass end
+    if options["UM_SHMR_MINSLOP"] is not None:
+        beta = np.fmax(beta, options["UM_SHMR_MINSLOP"])  # slope for high mass end
 
     x = lgMh - lgm1
     lgMs = lgm1 + (
@@ -238,15 +270,15 @@ def um_lgMs_sig(lgMh, z):
 
 
 def um_lgMs_med(lgMh, z):
-    "ensure dlgMs/dlgMh >= UM_SHMR_MINSLOP"
+    "ensure dlgMs/dlgMh >= options['UM_SHMR_MINSLOP']"
     lgMs = um_lgMs_med_basic(lgMh, z)
 
-    # if UM_SHMR_MINSLOP is not None:
+    # if options['UM_SHMR_MINSLOP'] is not None:
     #     lgMh_ = np.linspace(0, 16, 161)
     #     lgMs_ = um_lgMs_med_basic(lgMh_, z=z)
 
     #     f = Akima1DInterpolator(lgMh_, lgMs_)
-    #     roots = f.derivative().solve(UM_SHMR_MINSLOP, extrapolate=False)
+    #     roots = f.derivative().solve(options['UM_SHMR_MINSLOP'], extrapolate=False)
     #     if len(roots) == 0:
     #         lgMh_peak = lgMh_[-1]
     #     else:
@@ -255,10 +287,10 @@ def um_lgMs_med(lgMh, z):
 
     #     if np.isscalar(lgMh):
     #         if lgMh > lgMh_peak:
-    #             lgMs = lgMs_peak + UM_SHMR_MINSLOP * (lgMh - lgMh_peak)
+    #             lgMs = lgMs_peak + options['UM_SHMR_MINSLOP'] * (lgMh - lgMh_peak)
     #     else:
     #         ix = lgMh > lgMh_peak
-    #         lgMs[ix] = lgMs_peak + UM_SHMR_MINSLOP * (lgMh[ix] - lgMh_peak)
+    #         lgMs[ix] = lgMs_peak + options['UM_SHMR_MINSLOP'] * (lgMh[ix] - lgMh_peak)
 
     return lgMs
 
@@ -282,37 +314,39 @@ def um_AUV(MUV, z, derivative=False):
 def ffb_lgMh_crit(z):
     "Halo mass threshold for FFB"
     # lgMh_crit = 10.8 - 6.2 * log10((1 + z) / 10)  # D23, eq 62
-    lgMh_crit = FFB_LGMH_PIVOT - 6.2 * log10((1 + z) / 10)  # D23, eq 62
+    lgMh_crit = options["FFB_LGMH_PIVOT"] - 6.2 * log10((1 + z) / 10)  # D23, eq 62
     return lgMh_crit
 
 
 def ffb_sfr_med(lgMh, z):
-    sfr_avg = func_Mdot_baryon(lgMh, z=z) * FFB_SFE_MAX  # keep sfr_avg fixed
-    fac_avg_med = exp(0.5 * (ffb_sfr_sig(lgMh, z=z) * log(10)) ** 2)
+    sfr_avg = func_Mdot_baryon(lgMh, z=z) * options["FFB_SFE_MAX"]  # keep sfr_avg fixed
+    fac_avg_med = exp(0.5 * (options["ffb_sfr_sig"](lgMh, z=z) * log(10)) ** 2)
     sfr_med = sfr_avg / fac_avg_med  # convert avg to median
     return sfr_med  # Msun/yr
 
 
 def ffb_sfr_sig(lgMh, z):
-    return FFB_SFR_SIG  # dex
+    return options["FFB_SFR_SIG"]  # dex
 
 
 def ffb_fFFB(lgMh, z):
     """
-    The meaning depends on the global variable FFB_FRAC_ALL
+    The meaning depends on the global variable options['FFB_FRAC_ALL']
     If true, f_ffb is defined wrt all gals, otherwise wrt SF gals.
     """
     lgMh_crit = ffb_lgMh_crit(z)
-    f_FFB = sigmoid(lgMh, m=lgMh_crit, s=FFB_SFR_TH_SIG, a=0, b=1)
-    if FFB_LGMH_QUENCH is not None:
-        f_FFB *= sigmoid(lgMh, m=FFB_LGMH_QUENCH, s=FFB_SFR_TH_SIG, a=1, b=0)
+    f_FFB = sigmoid(lgMh, m=lgMh_crit, s=options["FFB_SFR_TH_SIG"], a=0, b=1)
+    if options["FFB_LGMH_QUENCH"] is not None:
+        f_FFB *= sigmoid(
+            lgMh, m=options["FFB_LGMH_QUENCH"], s=options["FFB_SFR_TH_SIG"], a=1, b=0
+        )
     return f_FFB
 
 
 # UV luminosity
 # -----------------------------
 def func_MUV_sfr_Salpeter(SFR, z):
-    kappa_UV = 1.15e-28 * UV_FACTOR
+    kappa_UV = 1.15e-28 * options["UV_FACTOR"]
     lum = SFR / kappa_UV * (u.erg / u.s / u.Hz)
     dist_lum = 10 * u.pc
     flux = lum / (4 * pi * dist_lum**2)
@@ -331,7 +365,7 @@ def func_MUV_sfr(SFR, z):
 
 
 def func_MUV_lgMs(lgMs, z):
-    MUV = -2.3 * (lgMs - 9) - 20.5 - 2.5 * log10(UV_FACTOR)
+    MUV = -2.3 * (lgMs - 9) - 20.5 - 2.5 * log10(options["UV_FACTOR"])
     return MUV
 
 
@@ -345,7 +379,7 @@ def p_lgSFR_lgMh(lgSFR, lgMh, z):
     med_q = um_sfr_med_q(lgMh, z)
     sig_q = um_sfr_sig_q(lgMh, z)
 
-    if FFB_FRAC_ALL:
+    if options["FFB_FRAC_ALL"]:
         f_q_ = um_fQ(lgMh, z)
         f_ffb = ffb_fFFB(lgMh, z)
         f_um = 1 - f_ffb
@@ -374,7 +408,7 @@ def func_sfr_avg(lgMh, z):
     med_q = um_sfr_med_q(lgMh, z)
     sig_q = um_sfr_sig_q(lgMh, z)
 
-    if FFB_FRAC_ALL:
+    if options["FFB_FRAC_ALL"]:
         f_q_ = um_fQ(lgMh, z)
         f_ffb = ffb_fFFB(lgMh, z)
         f_um = 1 - f_ffb
@@ -400,7 +434,7 @@ def func_dif_sfr_avg(lgMh, z, Mdot):
     med_sf = um_sfr_med_sf(lgMh, z)
     sig_sf = um_sfr_sig_sf(lgMh, z)
 
-    if FFB_FRAC_ALL:
+    if options["FFB_FRAC_ALL"]:
         med_q = um_sfr_med_q(lgMh, z)
         sig_q = um_sfr_sig_q(lgMh, z)
 
@@ -409,7 +443,7 @@ def func_dif_sfr_avg(lgMh, z, Mdot):
         f_ffb = ffb_fFFB(lgMh, z)
 
         dif_sfr_avg = f_ffb * (
-            Mdot * FFB_SFE_MAX
+            Mdot * options["FFB_SFE_MAX"]
             - f_sf * lgnormal_mean(med_sf, sig_sf)
             - f_q * lgnormal_mean(med_q, sig_q)
         )
@@ -419,7 +453,9 @@ def func_dif_sfr_avg(lgMh, z, Mdot):
         f_SF_ = 1 - f_q
         f_ffb = f_SF_ * f_FFB_
 
-        dif_sfr_avg = f_ffb * (Mdot * FFB_SFE_MAX - lgnormal_mean(med_sf, sig_sf))
+        dif_sfr_avg = f_ffb * (
+            Mdot * options["FFB_SFE_MAX"] - lgnormal_mean(med_sf, sig_sf)
+        )
     return dif_sfr_avg.clip(0)  # min: 0
 
 
@@ -523,7 +559,7 @@ def p_MUV_lgMh(MUV, lgMh, z, attenuation=None):
     MUV_sig = ((2.3 * lgMs_sig) ** 2 + 0.3**2) ** 0.5  # 0.3? TBC
 
     if attenuation:
-        if FFB_FRAC_ALL:
+        if options["FFB_FRAC_ALL"]:
             f_ffb = ffb_fFFB(lgMh, z)
         else:
             f_FFB_ = ffb_fFFB(lgMh, z)
@@ -538,10 +574,10 @@ def p_MUV_lgMh(MUV, lgMh, z, attenuation=None):
         elif attenuation == "disc":
             AUV_ffb = ffb_AUV(lgMh, z, mode="disc", Zin=0.1, eps=None)
         elif attenuation == "average":
-            AUV_ffb = (
+            AUV_ffb = 0.5 * (
                 ffb_AUV(lgMh, z, mode="shell", Zin=0.1, eps=None)
                 + ffb_AUV(lgMh, z, mode="disc", Zin=0.1, eps=None)
-            ) * 0.5
+            )
         MUV_med_ffb = MUV_med + AUV_ffb
 
         prob = f_ffb * normal(MUV, MUV_med_ffb, MUV_sig) + (1 - f_ffb) * normal(
@@ -750,21 +786,21 @@ def compute_surface_density_obs(
 # Halo growth history
 # -----------------------------
 def mah_interp(z_ob, lgM_ob, z_hist):
-    if HALO_MAH_MODEL == "Zhao09":
+    if options["HALO_MAH_MODEL"] == "Zhao09":
         return mah_interp_Zhao09(z_ob, lgM_ob, z_hist)
-    elif HALO_MAH_MODEL == "Dekel13":
+    elif options["HALO_MAH_MODEL"] == "Dekel13":
         return mah_interp_Dekel13(z_ob, lgM_ob, z_hist)
     else:
-        raise ValueError("HALO_MAH_MODEL' should be Dekel13 or Zhao09")
+        raise ValueError("options['HALO_MAH_MODEL']' should be Dekel13 or Zhao09")
 
 
 def mah_der_interp(z_ob, lgM_ob, z_hist):
-    if HALO_MAH_MODEL == "Zhao09":
+    if options["HALO_MAH_MODEL"] == "Zhao09":
         return mah_der_interp_Zhao09(z_ob, lgM_ob, z_hist)
-    elif HALO_MAH_MODEL == "Dekel13":
+    elif options["HALO_MAH_MODEL"] == "Dekel13":
         return mah_der_interp_Dekel13(z_ob, lgM_ob, z_hist)
     else:
-        raise ValueError("HALO_MAH_MODEL' should be Dekel13 or Zhao09")
+        raise ValueError("options['HALO_MAH_MODEL'] should be Dekel13 or Zhao09")
 
 
 def mah_interp_Zhao09(z_ob, lgM_ob, z_hist):
@@ -853,11 +889,11 @@ def mah_interp_Dekel13(z_ob, lgM_ob, z_hist):
         lgM_ob if np.isscalar(lgM_ob) else lgM_ob.reshape(-1, 1)
     )  # transpose of lgM_ob
 
-    if DEKEL13_BETA == 0:
+    if options["DEKEL13_BETA"] == 0:
         lgM_hist = lgM_ob_T - alpha * (z_hist - z_ob) / log(10)
     else:
-        beta, lgM_c0 = DEKEL13_BETA, abs(DEKEL13_PIVOT)
-        if DEKEL13_PIVOT > 0:
+        beta, lgM_c0 = options["DEKEL13_BETA"], abs(options["DEKEL13_PIVOT"])
+        if options["DEKEL13_PIVOT"] > 0:
             lgM_hist = (
                 lgM_c0
                 - log10(
@@ -891,9 +927,9 @@ def mah_der_interp_Dekel13(z_ob, lgM_ob, z_hist):
     lgM_hist = mah_interp_Dekel13(z_ob, lgM_ob, z_hist)
     lgMdot_hist = lgM_hist + log10(s * (1 + z_hist) ** 2.5) - 9
 
-    if DEKEL13_BETA != 0:
-        beta, lgM_c0 = DEKEL13_BETA, abs(DEKEL13_PIVOT)
-        if DEKEL13_PIVOT > 0:
+    if options["DEKEL13_BETA"] != 0:
+        beta, lgM_c0 = options["DEKEL13_BETA"], abs(options["DEKEL13_PIVOT"])
+        if options["DEKEL13_PIVOT"] > 0:
             lgM_c = lgM_c0
         else:
             lgM_c = lgM_c0 - alpha * (z_hist - z_ob) / log(10)
