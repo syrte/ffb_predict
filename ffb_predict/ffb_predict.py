@@ -120,12 +120,12 @@ def um_Mh_vpeak_z(vpeak, z):
     return Mh
 
 
-def um_sfr_func1(z, x0, xa, xla, xz):
+def _um_sfr_func1(z, x0, xa, xla, xz):
     a = 1.0 / (1.0 + z)
     return x0 + xa * (1 - a) + xla * log(1 + z) + xz * z
 
 
-def um_sfr_func2(z, x0, xa, xz):
+def _um_sfr_func2(z, x0, xa, xz):
     a = 1.0 / (1.0 + z)
     return x0 + xa * (1 - a) + xz * z
 
@@ -133,11 +133,11 @@ def um_sfr_func2(z, x0, xa, xz):
 def um_sfr_med_sf(lgMh, z):
     # B19, appendix H
     vpeak = um_vpeak_Mh_z(10**lgMh, z)  # km/s
-    vz = 10 ** um_sfr_func1(z, 2.151, -1.658, 1.680, -0.233)  # km/s
-    eps = 10 ** um_sfr_func1(z, 0.109, -3.441, 5.079, -0.781)  # Msun/yr
-    alpha = um_sfr_func1(z, -5.598, -20.731, 13.455, -1.321)
-    beta = um_sfr_func2(z, -1.911, 0.395, 0.747)
-    gamma = 10 ** um_sfr_func2(z, -1.699, 4.206, -0.809)
+    vz = 10 ** _um_sfr_func1(z, 2.151, -1.658, 1.680, -0.233)  # km/s
+    eps = 10 ** _um_sfr_func1(z, 0.109, -3.441, 5.079, -0.781)  # Msun/yr
+    alpha = _um_sfr_func1(z, -5.598, -20.731, 13.455, -1.321)
+    beta = _um_sfr_func2(z, -1.911, 0.395, 0.747)
+    gamma = 10 ** _um_sfr_func2(z, -1.699, 4.206, -0.809)
     delta = 0.055
 
     # B19, eq 4, 5
@@ -364,6 +364,7 @@ def func_MUV_sfr(SFR, z):
 
 
 def func_MUV_lgMs(lgMs, z):
+    # Yung+2023
     MUV = -2.3 * (lgMs - 9) - 20.5 - 2.5 * log10(options["UV_FACTOR"])
     return MUV
 
@@ -675,12 +676,17 @@ def compute_rho_SFR(z, MUV_lim):
     MUV = func_MUV_lgMs(lgMs, z)
     lgMh_lim = np.interp(MUV_lim, MUV[::-1], lgMh[::-1])
 
-    lgSFR = np.linspace(-6, 6, 121).reshape(-1, 1)
-    pr_lgSFR_lgMh = p_lgSFR_lgMh(lgSFR, lgMh, z)
-    dSFR_dlgMh = simps1d(
-        10**lgSFR * pr_lgSFR_lgMh * dNdlgMh, axis=0, dx=lgSFR[1] - lgSFR[0]
-    )
-    F_dSFR_dlgMh = Akima1DInterpolator(-lgMh[::-1], dSFR_dlgMh[::-1]).antiderivative()
+    SFR = func_sfr_avg(lgMh, z)
+    F_dSFR_dlgMh = Akima1DInterpolator(
+        -lgMh[::-1], (SFR * dNdlgMh)[::-1]
+    ).antiderivative()
+
+    # lgSFR = np.linspace(-6, 6, 121).reshape(-1, 1)
+    # pr_lgSFR_lgMh = p_lgSFR_lgMh(lgSFR, lgMh, z)
+    # dSFR_dlgMh = simps1d(
+    #     10**lgSFR * pr_lgSFR_lgMh * dNdlgMh, axis=0, dx=lgSFR[1] - lgSFR[0]
+    # )
+    # F_dSFR_dlgMh = Akima1DInterpolator(-lgMh[::-1], dSFR_dlgMh[::-1]).antiderivative()
 
     rho_SFR = F_dSFR_dlgMh(-lgMh_lim)
 
@@ -703,9 +709,9 @@ def compute_dNdMUV_Ms(z, MUV=None, attenuation=None, return_func=False):
         return func_lgdNdMUV
 
 
-def compute_rho_UV(z, MUV_lim):
+def compute_rho_UV(z, MUV_lim, attenuation=None):
     "rho_UV(MUV<MUV_lim | z) in units of erg/s/Hz/Mpc^3"
-    MUV, dNdMUV = compute_dNdMUV_Ms(z)
+    MUV, dNdMUV = compute_dNdMUV_Ms(z, attenuation=attenuation)
 
     dist_lum = 10 * u.pc
     flux = (MUV * u.ABmag).to(u.erg / u.s / u.cm**2 / u.Hz)
@@ -747,7 +753,7 @@ def convert_MUV_to_JWST(
 
 
 def compute_surface_density_obs(
-    mag_lim, band="NIRCam_F277W", area=u.arcsec**2, attenuation=None
+    mag_lim, band="NIRCam_F277W", area=u.arcmin**2, attenuation=None
 ):
     """
     N(>z, m<mlin) of bright galaxies within give area in the sky
@@ -770,7 +776,7 @@ def compute_surface_density_obs(
         MUV, dNdMUV = compute_dNdMUV_Ms(z, attenuation=attenuation)
         func_den = Akima1DInterpolator(MUV, dNdMUV).antiderivative()
 
-        MUV_lim = convert_MUV_to_JWST(z, mag_lim, JWST_band=band, inverse=True)
+        MUV_lim = convert_MUV_to_JWST(z, mag_lim, band=band, inverse=True)
         den_gal[i] = func_den(MUV_lim)
 
     func_num = Akima1DInterpolator(-vol[::-1], den_gal[::-1]).antiderivative()
