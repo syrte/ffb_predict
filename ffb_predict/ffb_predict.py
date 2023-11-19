@@ -940,6 +940,15 @@ def mah_der_interp_Dekel13(z_ob, lgM_ob, z_hist):
 
 # FFB steady wind -- cooling
 # -----------------------------
+def ffb_wind(lgMh=None, z=None, eps=None):
+    "either provide (lgMh, z) or eps"
+    if eps is None:
+        eps = func_SFE_instant(lgMh, z)
+    eta = 5 / eps - 4
+    Vwind = 3333 * eta**-0.5  # km/s
+    return Vwind
+
+
 def ffb_rcool(lgMh, z, mode="shell", eps=None):
     if eps is None:
         eps = func_SFE_instant(lgMh, z)
