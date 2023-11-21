@@ -1,5 +1,7 @@
 """
-Prediction with FFB model for JWST
+Feedback-Free Starbursts at Cosmic Dawn: Observable Predictions for JWST
+Zhaozhou Li, Avishai Dekel, Kartick C. Sarkar, Han Aung, Mauro Giavalisco, Nir Mandelker, and Sandro Tacchella
+
 
 author: Zhaozhou Li (lizz.astro@gmail.com)
 """
