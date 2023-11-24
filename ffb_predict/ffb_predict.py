@@ -1118,7 +1118,7 @@ def ffb_fobsc(lgMh, z, mode="shell", Zin=0, eps=None):
 
 # The four functions below are approximations, which are not used in practice
 def ffb_tau_shell(sfe, lgMh, z):
-    "UV optical depth for shell scenario, Li+23, eq 29"
+    "UV optical depth for shell scenario, Li+23, eq 48"
     # for the shell the average of r>0 and r>R
     Mz_dep = 10 ** (0.97 * (lgMh - 10.8)) * ((1 + z) / 10) ** 3.25
     neg_log_meanexp = lambda x, y: -log(0.5 * (exp(-x) + exp(-y)))
@@ -1127,7 +1127,7 @@ def ffb_tau_shell(sfe, lgMh, z):
 
 
 def ffb_tau_disc(sfe, lgMh, z):
-    "UV optical depth for disc scenario, Li+23, eq 29"
+    "UV optical depth for disc scenario, Li+23, eq 48"
     # for the disc only r>R
     Mz_dep = 10 ** (0.81 * (lgMh - 10.8)) * ((1 + z) / 10) ** 3.5
     tau = (0.36) * ffb_f_sfe(sfe) * Mz_dep
