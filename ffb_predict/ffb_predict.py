@@ -755,7 +755,11 @@ def convert_MUV_to_JWST(
 
 
 def compute_surface_density_obs(
-    mag_lim, band="NIRCam_F277W", area=u.arcmin**2, attenuation=None
+    mag_lim,
+    band="NIRCam_F277W",
+    area=u.arcmin**2,
+    attenuation=None,
+    table_path="data/Yung/Conversion_tables",
 ):
     """
     N(>z, m<mlin) of bright galaxies within give area in the sky
@@ -778,7 +782,9 @@ def compute_surface_density_obs(
         MUV, dNdMUV = compute_dNdMUV_Ms(z, attenuation=attenuation)
         func_den = Akima1DInterpolator(MUV, dNdMUV).antiderivative()
 
-        MUV_lim = convert_MUV_to_JWST(z, mag_lim, band=band, inverse=True)
+        MUV_lim = convert_MUV_to_JWST(
+            z, mag_lim, band=band, table_path=table_path, inverse=True
+        )
         den_gal[i] = func_den(MUV_lim)
 
     func_num = Akima1DInterpolator(-vol[::-1], den_gal[::-1]).antiderivative()
