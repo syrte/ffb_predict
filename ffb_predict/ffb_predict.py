@@ -593,7 +593,7 @@ def p_MUV_lgMh(MUV, lgMh, z, attenuation=None):
 # Halo mass func and number densities
 # -----------------------------
 def compute_dNdlgMh(z, lgMh=None, return_func=False):
-    "halo mass func"
+    "halo mass func, dN/dlogMh [cMpc^-3 dex^-1]"
     if lgMh is None:
         # nu_max = 10  # maximum peak height, lgM_max=16.7 at z=0, 11.6 at z=18
         nu_max = 8  # maximum peak height, lgM_max=16.5 at z=0, 10.8 at z=18
@@ -615,6 +615,17 @@ def compute_dNdlgMh(z, lgMh=None, return_func=False):
     else:
         func_lgdNdlgMh = Akima1DInterpolator(lgMh, log10(dNdlgMh))
         return func_lgdNdlgMh
+
+
+def compute_rho_dm_lgMh(z, lgMh):
+    """cumulative DM density above a halo mass, rho_dm(>Mh | z)"""
+    lgMh_, dNdlgMh_ = compute_dNdlgMh(z, np.linspace(8, 16.5, 101))
+    F_dMh_dlgMh = Akima1DInterpolator(
+        -lgMh_[::-1], (10**lgMh_ * dNdlgMh_)[::-1]
+    ).antiderivative()
+
+    rho_dm = F_dMh_dlgMh(-lgMh)
+    return rho_dm
 
 
 def compute_dNdlgMs(z, lgMs=None, return_func=False):
@@ -641,8 +652,21 @@ def compute_N_lgMs(z, lgMs):
     return N_lgMs
 
 
+def compute_rho_star_lgMs(z, lgMs):
+    """rho_star(>Ms | z)"""
+    lgMs_, dNdlgMs_ = compute_dNdlgMs(z)
+    F_dMs_dlgMs = Akima1DInterpolator(
+        -lgMs_[::-1], (10**lgMs_ * dNdlgMs_)[::-1]
+    ).antiderivative()
+
+    rho_star = F_dMs_dlgMs(-lgMs)
+    return rho_star
+
+
 def compute_rho_star(z, MUV_lim):
-    "rho_star(MUV<MUV_lim | z)"
+    """rho_star(MUV<MUV_lim | z)
+    No attenuation considered yet when converting MUV_lim to Ms_lim.
+    """
     lgMs, dNdlgMs = compute_dNdlgMs(z)
     F_dMs_dlgMs = Akima1DInterpolator(
         -lgMs[::-1], (10**lgMs * dNdlgMs)[::-1]
