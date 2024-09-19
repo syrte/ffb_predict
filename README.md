@@ -2,8 +2,7 @@
 
 - Feedback-Free Starbursts (FFB) at Cosmic Dawn: Observable Predictions for JWST
 
-    Zhaozhou Li, Avishai Dekel, Kartick C. Sarkar, Han Aung, Mauro Giavalisco, Nir Mandelker, Sandro Tacchella
-
+    Zhaozhou Li, Avishai Dekel, Kartick C. Sarkar, Han Aung, Mauro Giavalisco, Nir Mandelker, Sandro Tacchella, 2024, A & A
     [ADS](https://ui.adsabs.harvard.edu/abs/2023arXiv231114662L), [arXiv](https://arxiv.org/abs/2311.14662)
 
 
