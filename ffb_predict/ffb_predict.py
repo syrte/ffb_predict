@@ -541,6 +541,11 @@ def func_Mdot_baryon(lgMh, z):
     return Mdot  # Msun/yr
 
 
+def func_SFE_cumulative(lgMh, z, z_max=30):
+    lgMs = func_lgMs_med(lgMh, z, z_max=z_max)
+    return 10**lgMs / (10**lgMh * fb)
+
+
 def func_SFE_instant(lgMh, z):
     "SFR / Mdot_baryon"
     SFR = func_sfr_avg(lgMh, z)
