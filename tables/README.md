@@ -4,6 +4,8 @@ Data tables are provided for different redshifts (z),
 and maximum star formation efficiency epsilon_max (see Li+24 for details).
 For UV luminosity, results with three models for dust are provided (none, disc, shell scenario).
 
+You can download all the data tables in batch via this link: https://github.com/syrte/ffb_predict/archive/refs/heads/main.zip
+
 ## SFE
 Star formation efficiency as function of halo mass.
 
