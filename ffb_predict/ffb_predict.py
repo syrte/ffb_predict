@@ -728,7 +728,7 @@ def compute_dNdMUV_Ms(z, MUV=None, attenuation=None, return_func=False):
     "UVLF computed using MUV-Ms relation"
     lgMh, dNdlgMh = compute_dNdlgMh(z)
     if MUV is None:
-        MUV = np.arange(-28, -14 + 0.001, 0.1)
+        MUV = np.arange(-28, -12 + 0.001, 0.1)
 
     pr_MUV_lgMh = p_MUV_lgMh(MUV.reshape(-1, 1), lgMh, z, attenuation=attenuation)
     dNdMUV = simps1d(pr_MUV_lgMh * dNdlgMh, dx=lgMh[1] - lgMh[0])
