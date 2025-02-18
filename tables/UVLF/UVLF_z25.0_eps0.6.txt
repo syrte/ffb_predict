@@ -5,6 +5,16 @@
 #   [none, disc, shell], extinction models: no dust, disc mode, or shell mode
 #     extinction for shell mode is stronger that for disc mode, see details in Li, Dekel+23
     MUV   Phi[none]   Phi[disc]   Phi[shell]  
+  -14.0   7.585e-06   7.463e-06    7.456e-06  
+  -14.1   6.911e-06   6.793e-06    6.786e-06  
+  -14.2   6.291e-06   6.177e-06    6.171e-06  
+  -14.3   5.721e-06   5.611e-06    5.605e-06  
+  -14.4   5.197e-06   5.090e-06    5.085e-06  
+  -14.5   4.716e-06   4.612e-06    4.607e-06  
+  -14.6   4.274e-06   4.173e-06    4.169e-06  
+  -14.7   3.868e-06   3.769e-06    3.766e-06  
+  -14.8   3.495e-06   3.399e-06    3.397e-06  
+  -14.9   3.153e-06   3.060e-06    3.059e-06  
   -15.0   2.840e-06   2.748e-06    2.748e-06  
   -15.1   2.553e-06   2.463e-06    2.465e-06  
   -15.2   2.291e-06   2.202e-06    2.205e-06  
