@@ -12,43 +12,17 @@ from numpy import pi, log10, log, exp
 from scipy.interpolate import Akima1DInterpolator
 from scipy.special import erf, roots_legendre
 from scipy.interpolate import RegularGridInterpolator
+
 from astropy import units as u
-from h5attr import H5Attr
 
 from colossus.cosmology import cosmology
 from colossus.lss import mass_function, peaks
 
 
-# cosmology
+# functions managing options
 # -----------------------------
-# params = {'flat': True, 'H0': 67.32, 'Om0': 0.3158, 'Ob0': 0.156 * 0.3158, 'sigma8': 0.812, 'ns': 0.96605}  # Planck15
-params = {"flat": True, "H0": 70, "Om0": 0.3, "Ob0": 0.048, "sigma8": 0.82, "ns": 0.95}
-cosmo = cosmology.setCosmology("myCosmo", params)
-fb = cosmo.Ob0 / cosmo.Om0  # 0.16
-
-# Press-Schechter parameters
-ps_ext_args = dict(
-    ps_args={"model": "eisenstein98"},
-    sigma_args={"filt": "tophat"},
-    deltac_args={"corrections": True},
-)
-
-# global variables
-# -----------------------------
-default_options = dict(
-    UM_SHMR_MINSLOP=0.3,  # manual fix with minimum slop of dlnM*/dlnMh, None for disable
-    FFB_SFR_SIG=0.3,  # dex
-    FFB_SFR_TH_SIG=0.15,  # dex, transition width, equiv to ~0.6 dex full transition region
-    FFB_LGMH_PIVOT=10.8,  # Msun
-    FFB_LGMH_QUENCH=None,  # Msun, can be None to disable
-    FFB_SFE_MAX=1,  # maximum star formation efficiency for FFB galaxies
-    FFB_FRAC_ALL=False,  # if true, f_ffb is defined wrt all gals, otherwise wrt SF gals.
-    HALO_MAH_MODEL="Dekel13",  # Model for halo growth history, Dekel13 or Zhao09
-    DEKEL13_BETA=0.14,  # beta=0.14 in Dekel+13 eq. 7
-    DEKEL13_PIVOT=12,  # pivot mass
-    UV_FACTOR=1,  # not used
-)
-options = dict()
+def get_option():
+    return options.copy()
 
 
 def set_option(**opts):
@@ -60,13 +34,6 @@ def set_option(**opts):
     return options
 
 
-set_option(**default_options)
-
-
-def get_option():
-    return options.copy()
-
-
 @contextmanager
 def with_option(**opts):
     "change the options temporarily, restore to earlier values when exit the context"
@@ -76,6 +43,52 @@ def with_option(**opts):
         yield
     finally:
         set_option(**current_options)
+
+
+# global variables
+# -----------------------------
+default_options = dict(
+    FFB_SFE_MAX=0.3,  # maximum star formation efficiency for FFB galaxies
+    FFB_SFR_SIG=0.3,  # dex, it does not affect the mean SFR, but the scatter
+    FFB_LGMH_SIG=0.15,  # dex, transition width. taking 0.15 equiv to ~0.6 dex full transition region
+    FFB_LGMH_PIVOT=10.8,  # Msun
+    # FFB_LGMH_QUENCH=None,  # Msun, can be None to disable
+    FFB_Z_QUENCH=8,  # FFB quenching redshift, go back to normal galaxies
+    FFB_Z_QUENCH_SIG=0.2,  # transition width. taking 0.2 equiv to ~0.8 full transition region
+    FFB_POST="Q",  # ['UM', 'SF', 'Q'], is post-FFB normal UM SF or quenched galaxies
+    FFB_FRAC_ALL=True,  # if true, f_ffb is defined relative to all gals, otherwise to UM SF gals.
+    UM_SHMR_MINSLOP=0.3,  # manual fix with minimum slop of dlnM*/dlnMh in UM to prevent weird things, None for disable
+    HALO_MAH_MODEL="Dekel13",  # Model for halo growth history, Dekel13 or Zhao09
+    HALO_MAH_DEKEL13_BETA=0,  # mass dependence in Dekel+13 eq. 7; beta=0.14 for z=0, but beta=0 is better for z>2
+    HALO_MAH_DEKEL13_PIVOT=12,  # pivot mass in Dekel+13 eq. 7
+    UV_FACTOR=1,  # not used
+    COSMO_PARAMS={
+        "flat": True,
+        "H0": 70,
+        "Om0": 0.3,
+        "Ob0": 0.048,
+        "sigma8": 0.82,
+        "ns": 0.95,
+    },  # cosmology for colossus
+    # COSMO_PARAMS = {'flat': True, 'H0': 67.32, 'Om0': 0.3158, 'Ob0': 0.156 * 0.3158, 'sigma8': 0.812, 'ns': 0.96605}  # Planck15
+    HALO_MASS_FUNC="Watson13",
+)
+
+options = dict()  # global options
+set_option(**default_options)
+
+
+# cosmology
+# -----------------------------
+cosmo = cosmology.setCosmology("myCosmo", options["COSMO_PARAMS"])
+fb = cosmo.Ob0 / cosmo.Om0  # 0.16
+
+# Press-Schechter parameters
+ps_ext_args = dict(
+    ps_args={"model": "eisenstein98"},
+    sigma_args={"filt": "tophat"},
+    deltac_args={"corrections": True},
+)
 
 
 # math functions
@@ -100,7 +113,7 @@ def lgnormal_mean(med, sig_dex):
     return med * exp(0.5 * (sig_dex * log(10)) ** 2)
 
 
-# Universe Machine functions
+# UniverseMachine functions
 # -----------------------------
 def um_vpeak_Mh_z(Mh, z):
     # peak historical halo mass, using Bryan & Norman virial overdensity.
@@ -180,6 +193,7 @@ def um_lgMhQ(z):
 
 
 def um_fQ(lgMh, z):
+    "quenching fraction"
     a = 1.0 / (1.0 + z)
     vpeak = um_vpeak_Mh_z(10**lgMh, z)  # km/s
 
@@ -330,18 +344,29 @@ def ffb_sfr_sig(lgMh, z):
     return options["FFB_SFR_SIG"]  # dex
 
 
-def ffb_fFFB(lgMh, z):
+def ffb_f_FFB(lgMh, z):
     """
-    The meaning depends on the global variable options['FFB_FRAC_ALL']
-    If true, f_ffb is defined wrt all gals, otherwise wrt SF gals.
+    Fraction of FFB galaxies at given halo mass and z.
+    The actual meaning depends on the global variable options['FFB_FRAC_ALL'].
+    If true, f_ffb is defined relative to all gals, otherwise to SF gals in UniverseMachine.
     """
     lgMh_crit = ffb_lgMh_crit(z)
-    f_FFB = sigmoid(lgMh, m=lgMh_crit, s=options["FFB_SFR_TH_SIG"], a=0, b=1)
-    if options["FFB_LGMH_QUENCH"] is not None:
-        f_FFB *= sigmoid(
-            lgMh, m=options["FFB_LGMH_QUENCH"], s=options["FFB_SFR_TH_SIG"], a=1, b=0
-        )
-    return f_FFB
+    if options["FFB_Z_QUENCH"] is not None:
+        z_q = options["FFB_Z_QUENCH"]
+        lgMh_hist = mah_interp(z_q, ffb_lgMh_crit(z_q), z)
+        lgMh_crit = np.where(z < z_q, lgMh_hist, lgMh_crit)
+
+    f_ffb_all = sigmoid(lgMh, m=lgMh_crit, s=options["FFB_LGMH_SIG"], a=0, b=1)
+
+    if options["FFB_Z_QUENCH"] is not None:
+        f_post = sigmoid(z, m=z_q, s=options["FFB_Z_QUENCH_SIG"], a=1, b=0)
+    else:
+        f_post = 0
+    f_ffb = f_ffb_all * (1 - f_post)
+    f_postffb = f_ffb_all * f_post
+
+    return f_ffb_all, f_ffb, f_postffb
+    # f_ffb_all = f_ffb + f_postffb
 
 
 # UV luminosity
@@ -373,6 +398,40 @@ def func_MUV_lgMs(lgMs, z):
 
 # Combining UM and FFB
 # -----------------------------
+def f_FFB_SF_Q(lgMh, z):
+    f_q_um = um_fQ(lgMh, z)  # raw Q frac in UM
+    f_sf_um = 1 - f_q_um
+    f_ffb_all, f_ffb, f_postffb = ffb_f_FFB(lgMh, z)  # raw FFB frac
+
+    # FFB is portion of all galaxies or SF galaxies
+    if options["FFB_FRAC_ALL"]:
+        f_um = 1 - f_ffb_all
+        f_q = f_um * f_q_um
+        f_sf = f_um * f_sf_um
+    else:
+        f_q = f_q_um
+        f_ffb = f_sf_um * f_ffb
+        f_postffb = f_sf_um * f_postffb
+        f_sf = f_sf_um * (1 - f_ffb_all)
+
+    if options["FFB_POST"] == "UM":
+        f_q += f_postffb * f_q_um
+        f_sf += f_postffb * f_sf_um
+    elif options["FFB_POST"] == "Q":
+        f_q += f_postffb
+    elif options["FFB_POST"] == "SF":
+        f_sf += f_postffb
+    else:
+        raise ValueError("options['FFB_POST'] should be one of ['UM', 'SF', 'Q'] ")
+
+    return f_ffb, f_sf, f_q, f_postffb, f_sf_um, f_q_um
+
+    # f_ffb + f_sf + f_q = 1
+    # f_sf + f_q = f_um
+    # f_postffb is attributed to f_sf and f_q according to options["FFB_POST"]
+    # f_sf_um, f_q_um: raw SF/Q frac in UM
+
+
 def p_lgSFR_lgMh(lgSFR, lgMh, z):
     med_ffb = ffb_sfr_med(lgMh, z)
     sig_ffb = ffb_sfr_sig(lgMh, z)
@@ -381,18 +440,7 @@ def p_lgSFR_lgMh(lgSFR, lgMh, z):
     med_q = um_sfr_med_q(lgMh, z)
     sig_q = um_sfr_sig_q(lgMh, z)
 
-    if options["FFB_FRAC_ALL"]:
-        f_q_ = um_fQ(lgMh, z)
-        f_ffb = ffb_fFFB(lgMh, z)
-        f_um = 1 - f_ffb
-        f_q = f_um * f_q_
-        f_sf = f_um * (1 - f_q_)
-    else:
-        f_q = um_fQ(lgMh, z)
-        f_FFB_ = ffb_fFFB(lgMh, z)
-        f_SF_ = 1 - f_q
-        f_ffb = f_SF_ * f_FFB_
-        f_sf = f_SF_ * (1 - f_FFB_)
+    f_ffb, f_sf, f_q, f_postffb, f_sf_um, f_q_um = f_FFB_SF_Q(lgMh, z)
 
     prob = (
         f_ffb * normal(lgSFR, log10(med_ffb), sig_ffb)
@@ -410,18 +458,7 @@ def func_sfr_avg(lgMh, z):
     med_q = um_sfr_med_q(lgMh, z)
     sig_q = um_sfr_sig_q(lgMh, z)
 
-    if options["FFB_FRAC_ALL"]:
-        f_q_ = um_fQ(lgMh, z)
-        f_ffb = ffb_fFFB(lgMh, z)
-        f_um = 1 - f_ffb
-        f_q = f_um * f_q_
-        f_sf = f_um * (1 - f_q_)
-    else:
-        f_q = um_fQ(lgMh, z)
-        f_FFB_ = ffb_fFFB(lgMh, z)
-        f_SF_ = 1 - f_q
-        f_ffb = f_SF_ * f_FFB_
-        f_sf = f_SF_ * (1 - f_FFB_)
+    f_ffb, f_sf, f_q, f_postffb, f_sf_um, f_q_um = f_FFB_SF_Q(lgMh, z)
 
     sfr_avg = (
         f_ffb * lgnormal_mean(med_ffb, sig_ffb)
@@ -435,30 +472,18 @@ def func_dif_sfr_avg(lgMh, z, Mdot):
     "difference of SFR between UM and FFB"
     med_sf = um_sfr_med_sf(lgMh, z)
     sig_sf = um_sfr_sig_sf(lgMh, z)
+    med_q = um_sfr_med_q(lgMh, z)
+    sig_q = um_sfr_sig_q(lgMh, z)
 
-    if options["FFB_FRAC_ALL"]:
-        med_q = um_sfr_med_q(lgMh, z)
-        sig_q = um_sfr_sig_q(lgMh, z)
+    f_ffb, f_sf, f_q, f_postffb, f_sf_um, f_q_um = f_FFB_SF_Q(lgMh, z)
 
-        f_q = um_fQ(lgMh, z)
-        f_sf = 1 - f_q
-        f_ffb = ffb_fFFB(lgMh, z)
-
-        dif_sfr_avg = f_ffb * (
-            Mdot * options["FFB_SFE_MAX"]
-            - f_sf * lgnormal_mean(med_sf, sig_sf)
-            - f_q * lgnormal_mean(med_q, sig_q)
-        )
-    else:
-        f_q = um_fQ(lgMh, z)
-        f_FFB_ = ffb_fFFB(lgMh, z)
-        f_SF_ = 1 - f_q
-        f_ffb = f_SF_ * f_FFB_
-
-        dif_sfr_avg = f_ffb * (
-            Mdot * options["FFB_SFE_MAX"] - lgnormal_mean(med_sf, sig_sf)
-        )
-    return dif_sfr_avg.clip(0)  # min: 0
+    dif_sfr_avg = (
+        f_ffb * Mdot * options["FFB_SFE_MAX"]
+        + (f_sf - f_sf_um) * lgnormal_mean(med_sf, sig_sf)
+        + (f_q - f_q_um) * lgnormal_mean(med_q, sig_q)
+    )
+    return dif_sfr_avg
+    # XXX: dif_sfr_avg is not necessarily always positive
 
 
 def func_lgMs_med(lgMh, z, z_max=30, n_grid=200):
@@ -482,7 +507,7 @@ def func_lgMs_med(lgMh, z, z_max=30, n_grid=200):
 
     # UM mass and FFB correction
     Ms_um = 10 ** um_lgMs_med(lgMh, z)
-    Ms = Ms_um + dif_Ms
+    Ms = (Ms_um + dif_Ms).clip(1e-100)  # prevent zero
 
     return log10(Ms)
 
@@ -518,9 +543,7 @@ def func_lgMh_med_integ(lgMh, z, z_max=30, n_grid=200):
         cosmo.lookbackTime(z_hist, derivative=1) * log(10) * (1 + z_hist) * 1e9
     )  # yr/dex
 
-    func = Akima1DInterpolator(
-        lgzp1_hist, Mdot * dtdlgzp1_hist, axis=1
-    ).antiderivative()
+    func = Akima1DInterpolator(lgzp1_hist, Mdot * dtdlgzp1_hist, axis=1).antiderivative()
     Mh = func(lgzp1_hist[-1]) - func(lgzp1_hist[0]) + 1
     return log10(Mh)
 
@@ -566,12 +589,7 @@ def p_MUV_lgMh(MUV, lgMh, z, attenuation=None):
     MUV_sig = ((2.3 * lgMs_sig) ** 2 + 0.3**2) ** 0.5  # 0.3? TBC
 
     if attenuation:
-        if options["FFB_FRAC_ALL"]:
-            f_ffb = ffb_fFFB(lgMh, z)
-        else:
-            f_FFB_ = ffb_fFFB(lgMh, z)
-            f_SF_ = 1 - um_fQ(lgMh, z)
-            f_ffb = f_SF_ * f_FFB_
+        f_ffb, f_sf, f_q, f_postffb, f_sf_um, f_q_um = f_FFB_SF_Q(lgMh, z)
 
         AUV_um = um_AUV(MUV, z=z)
         MUV_med_um = MUV_med + AUV_um
@@ -586,6 +604,8 @@ def p_MUV_lgMh(MUV, lgMh, z, attenuation=None):
                 + ffb_AUV(lgMh, z, mode="disc", Zin=0.1, eps=None)
             )
         MUV_med_ffb = MUV_med + AUV_ffb
+        # XXX: this treatment is only approximation, because ffb and um gals may have different
+        # intrinsic UV
 
         prob = f_ffb * normal(MUV, MUV_med_ffb, MUV_sig) + (1 - f_ffb) * normal(
             MUV, MUV_med_um, MUV_sig
@@ -609,7 +629,7 @@ def compute_dNdlgMh(z, lgMh=None, return_func=False):
         10**lgMh * cosmo.h,
         z=z,
         mdef="vir",
-        model="Watson13".lower(),
+        model=options["HALO_MASS_FUNC"].lower(),
         q_out="dndlnM",
         **ps_ext_args,
     )  # dndlnM, comoving (Mpc/h)^-3
@@ -851,6 +871,8 @@ def mah_interp_Zhao09(z_ob, lgM_ob, z_hist):
     lgM should be between 1.5e5Msun and 8 sigma peak.
     z should be between 0 and 30.
     """
+    from h5attr import H5Attr  # XXX: to replace h5attr by h5py
+
     fp = H5Attr("mandc-1.03main/run/mchistory_cDekel.h5", lazy=False)
     z_list = np.sort([fp[f"lg(z+1)/{key}/ziz"][0] for key in fp["lg(z+1)"]])
     lgzp1_list = log10(z_list + 1)
@@ -887,6 +909,8 @@ def mah_der_interp_Zhao09(z_ob, lgM_ob, z_hist):
     lgM should be between 1.5e5Msun and 8 sigma peak.
     z should be between 0 and 30.
     """
+    from h5attr import H5Attr  # XXX: to replace h5attr by h5py
+
     fp = H5Attr("mandc-1.03main/run/mchistory_cDekel.h5", lazy=False)
     z_list = np.sort([fp[f"lg(z+1)/{key}/ziz"][0] for key in fp["lg(z+1)"]])
     lgzp1_list = log10(z_list + 1)
@@ -931,11 +955,13 @@ def mah_interp_Dekel13(z_ob, lgM_ob, z_hist):
         lgM_ob if np.isscalar(lgM_ob) else lgM_ob.reshape(-1, 1)
     )  # transpose of lgM_ob
 
-    if options["DEKEL13_BETA"] == 0:
+    if options["HALO_MAH_DEKEL13_BETA"] == 0:
         lgM_hist = lgM_ob_T - alpha * (z_hist - z_ob) / log(10)
     else:
-        beta, lgM_c0 = options["DEKEL13_BETA"], abs(options["DEKEL13_PIVOT"])
-        if options["DEKEL13_PIVOT"] > 0:
+        beta, lgM_c0 = options["HALO_MAH_DEKEL13_BETA"], abs(
+            options["HALO_MAH_DEKEL13_PIVOT"]
+        )
+        if options["HALO_MAH_DEKEL13_PIVOT"] > 0:
             base = 10 ** (-beta * (lgM_ob_T - lgM_c0)) + alpha * beta * (z_hist - z_ob)
             lgM_hist = lgM_c0 - log10(base) / beta
         else:
@@ -961,9 +987,11 @@ def mah_der_interp_Dekel13(z_ob, lgM_ob, z_hist):
     lgM_hist = mah_interp_Dekel13(z_ob, lgM_ob, z_hist)
     lgMdot_hist = lgM_hist + log10(s * (1 + z_hist) ** 2.5) - 9
 
-    if options["DEKEL13_BETA"] != 0:
-        beta, lgM_c0 = options["DEKEL13_BETA"], abs(options["DEKEL13_PIVOT"])
-        if options["DEKEL13_PIVOT"] > 0:
+    if options["HALO_MAH_DEKEL13_BETA"] != 0:
+        beta, lgM_c0 = options["HALO_MAH_DEKEL13_BETA"], abs(
+            options["HALO_MAH_DEKEL13_PIVOT"]
+        )
+        if options["HALO_MAH_DEKEL13_PIVOT"] > 0:
             lgM_c = lgM_c0
         else:
             lgM_c = lgM_c0 - alpha * (z_hist - z_ob) / log(10)
@@ -993,9 +1021,7 @@ def ffb_rcool(lgMh, z, mode="shell", eps=None):
     rshell = ffb_radius(lgMh, z, mode=mode, lambdas=0.025, eps=eps)
     # SFR = func_sfr_avg(lgMh, z)
     SFR = func_Mdot_baryon(lgMh, z) * eps
-    rcool = (
-        4 * (0.2 * eta) ** -2.92 * (rshell / 0.3) ** 1.79 * (0.3 * SFR / 10) ** -0.79
-    )
+    rcool = 4 * (0.2 * eta) ** -2.92 * (rshell / 0.3) ** 1.79 * (0.3 * SFR / 10) ** -0.79
     return rcool
 
 
@@ -1340,7 +1366,7 @@ class _HaloMassFunc:
                 10**lgMcen * cosmo.h,
                 z=z,
                 mdef="vir",
-                model="Watson13".lower(),
+                model=options["HALO_MASS_FUNC"].lower(),
                 q_out="dndlnM",
                 **ps_ext_args,
             )
